@@ -15,12 +15,12 @@ class TaskDialog(QDialog):
         self.setWindowTitle("タスクの編集" if task else "タスクの追加")
         self.resize(380, 240)
         self.setStyleSheet("""
-            QDialog { background-color: #2b2b2b; color: #ffffff; }
-            QLabel { color: #ffffff; font-size: 14px; }
+            QDialog { background-color: #f7f7f7; color: #333333; }
+            QLabel { color: #333333; font-size: 14px; }
             QLineEdit, QDateEdit, QSpinBox { 
-                background-color: #3b3b3b; 
-                color: #ffffff; 
-                border: 1px solid #555555; 
+                background-color: #ffffff; 
+                color: #333333; 
+                border: 1px solid #cccccc; 
                 padding: 4px;
                 border-radius: 4px;
             }
@@ -127,12 +127,12 @@ class GanttBarItem(QGraphicsRectItem):
         base_color = QColor(self.task.get('color', '#0078d4'))
         
         if self.isSelected():
-            self.setPen(QPen(Qt.white, 2))
+            self.setPen(QPen(Qt.black, 2))
         else:
-            self.setPen(QPen(base_color.darker(150), 1))
+            self.setPen(QPen(base_color.darker(120), 1))
             
-        # 背景（全体の枠）は少し暗めの色にして未完了部分とする
-        self.setBrush(QBrush(base_color.darker(150)))
+        # 背景（全体の枠）は少し明るめの色にして未完了部分とする
+        self.setBrush(QBrush(base_color.lighter(150)))
         
         # プログレス部分の描画
         progress = self.task.get('progress', 0)
@@ -276,28 +276,29 @@ class GanttApp(QMainWindow):
 
     def apply_styles(self):
         self.setStyleSheet("""
-            QMainWindow { background-color: #1e1e1e; }
-            QWidget { background-color: #1e1e1e; color: #d4d4d4; }
+            QMainWindow { background-color: #f0f0f0; }
+            QWidget { background-color: #f0f0f0; color: #333333; }
             QTableWidget { 
-                background-color: #252526; 
-                gridline-color: #3f3f3f; 
-                border: none;
-                color: #cccccc;
+                background-color: #ffffff; 
+                gridline-color: #e0e0e0; 
+                border: 1px solid #cccccc;
+                color: #333333;
             }
             QHeaderView::section { 
-                background-color: #333333; 
-                color: #ffffff; 
-                border: 1px solid #1e1e1e;
+                background-color: #e8e8e8; 
+                color: #333333; 
+                border: 1px solid #cccccc;
                 padding: 4px;
+                font-weight: bold;
             }
             QPushButton { 
-                background-color: #333333; 
-                border: 1px solid #454545; 
+                background-color: #ffffff; 
+                border: 1px solid #cccccc; 
                 padding: 6px 12px;
                 border-radius: 4px;
-                color: #ffffff;
+                color: #333333;
             }
-            QPushButton:hover { background-color: #454545; }
+            QPushButton:hover { background-color: #e8e8e8; }
             QSlider::handle:horizontal {
                 background: #0078d4;
                 width: 18px;
@@ -305,9 +306,9 @@ class GanttApp(QMainWindow):
                 border-radius: 9px;
             }
             QSlider::groove:horizontal {
-                border: 1px solid #444;
+                border: 1px solid #cccccc;
                 height: 8px;
-                background: #333;
+                background: #ffffff;
                 border-radius: 4px;
             }
         """)
@@ -360,6 +361,10 @@ class GanttApp(QMainWindow):
         self.view = QGraphicsView(self.scene)
         self.view.setRenderHint(QPainter.Antialiasing)
         self.view.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        
+        # ライトトーンでは背景色も白系にする
+        self.view.setBackgroundBrush(QBrush(QColor(255, 255, 255)))
+        self.view.setStyleSheet("border: 1px solid #cccccc;")
         self.splitter.addWidget(self.view)
         
         self.splitter.setSizes([450, 900])
@@ -422,18 +427,22 @@ class GanttApp(QMainWindow):
             d = self.min_date + timedelta(days=i)
             x = i * self.day_width
             if d.weekday() >= 5:
-                bg_color = QColor(40, 40, 40) if d.weekday() == 5 else QColor(50, 35, 35)
+                # 土日は薄い青と赤
+                bg_color = QColor(240, 248, 255) if d.weekday() == 5 else QColor(255, 240, 240)
                 self.scene.addRect(x, 0, self.day_width, chart_height, QPen(Qt.NoPen), QBrush(bg_color))
-            self.scene.addLine(x, 0, x, chart_height, QPen(QColor(60, 60, 60), 1))
+            # 縦線は薄いグレー
+            self.scene.addLine(x, 0, x, chart_height, QPen(QColor(220, 220, 220), 1))
+            
+            # ヘッダー領域
             header_rect = QRectF(x, 0, self.day_width, self.header_height)
-            self.scene.addRect(header_rect, QPen(QColor(80, 80, 80)), QBrush(QColor(45, 45, 45)))
+            self.scene.addRect(header_rect, QPen(QColor(200, 200, 200)), QBrush(QColor(245, 245, 245)))
             
             date_text = self.scene.addText(d.strftime("%d"))
-            date_text.setDefaultTextColor(Qt.white)
+            date_text.setDefaultTextColor(Qt.black)
             date_text.setPos(x + 5, 25)
             if d.day == 1 or i == 0 or d.weekday() == 0:
                 month_text = self.scene.addText(d.strftime("%Y/%m"))
-                month_text.setDefaultTextColor(QColor(0, 160, 255))
+                month_text.setDefaultTextColor(QColor(0, 100, 200))
                 month_text.setFont(QFont("Segoe UI", 8, QFont.Bold))
                 month_text.setPos(x + 2, 5)
                 
@@ -442,12 +451,12 @@ class GanttApp(QMainWindow):
         days_from_min = (now_date - self.min_date).days
         if 0 <= days_from_min < display_days:
             today_x = days_from_min * self.day_width + (self.day_width / 2)
-            pen = QPen(QColor(255, 80, 80), 2, Qt.DashLine)
+            pen = QPen(QColor(255, 60, 60), 2, Qt.DashLine)
             today_line = self.scene.addLine(today_x, self.header_height, today_x, chart_height, pen)
             today_line.setZValue(5) # バーの下層
             
             today_label = self.scene.addText("Today")
-            today_label.setDefaultTextColor(QColor(255, 80, 80))
+            today_label.setDefaultTextColor(QColor(255, 60, 60))
             today_label.setFont(QFont("Segoe UI", 8, QFont.Bold))
             today_label.setPos(today_x - 15, self.header_height - 20)
 
