@@ -13,15 +13,15 @@ class TaskDialog(QDialog):
     def __init__(self, parent=None, task=None):
         super().__init__(parent)
         self.setWindowTitle("タスクの編集" if task else "タスクの追加")
-        self.resize(380, 240)
+        self.resize(450, 280)
         self.setStyleSheet("""
             QDialog { background-color: #f7f7f7; color: #333333; }
             QLabel { color: #333333; font-size: 14px; }
-            QLineEdit, QDateEdit, QSpinBox { 
+            QLineEdit, QSpinBox { 
                 background-color: #ffffff; 
                 color: #333333; 
                 border: 1px solid #cccccc; 
-                padding: 4px; 
+                padding: 6px; 
                 border-radius: 4px; 
             }
             QPushButton { 
@@ -33,12 +33,11 @@ class TaskDialog(QDialog):
             }
             QPushButton:hover { background-color: #0086f0; }
         """)
-        self.layout = QFormLayout(self)
+        
+        main_layout = QVBoxLayout(self)
+        form_layout = QFormLayout()
+        
         self.name_input = QLineEdit()
-        self.start_input = QDateEdit()
-        self.start_input.setCalendarPopup(True)
-        self.end_input = QDateEdit()
-        self.end_input.setCalendarPopup(True)
         self.progress_input = QSpinBox()
         self.progress_input.setRange(0, 100)
         self.progress_input.setSuffix(" %")
@@ -47,32 +46,52 @@ class TaskDialog(QDialog):
         self.selected_color = "#0078d4"
         self.color_btn.clicked.connect(self.choose_color)
         
+        self.periods_input = QLineEdit()
+        self.periods_input.setPlaceholderText("例: 2026/04/01-04/05, 04/10-04/15")
+        
+        form_layout.addRow("タスク名:", self.name_input)
+        form_layout.addRow("進捗率:", self.progress_input)
+        form_layout.addRow("バーの色:", self.color_btn)
+        form_layout.addRow("期間指定:", self.periods_input)
+        
+        main_layout.addLayout(form_layout)
+        
+        hint = QLabel("※ カンマ区切りで複数指定可 (月/日-月/日 や 年/月/日-年/月/日)")
+        hint.setStyleSheet("font-size: 11px; color: #666;")
+        main_layout.addWidget(hint)
+        
+        main_layout.addStretch()
+        
         if task:
             self.name_input.setText(task.get('name', ''))
-            self.start_input.setDate(QDate.fromString(task.get('start_date', ''), Qt.ISODate))
-            self.end_input.setDate(QDate.fromString(task.get('end_date', ''), Qt.ISODate))
             self.progress_input.setValue(task.get('progress', 0))
             self.selected_color = task.get('color', '#0078d4')
+            periods = task.get('periods', [])
+            if not periods and 'start_date' in task and 'end_date' in task:
+                periods = [{'start_date': task['start_date'], 'end_date': task['end_date']}]
+            
+            p_strs = []
+            for p in periods:
+                s = p.get('start_date', '').replace('-', '/')
+                e = p.get('end_date', '').replace('-', '/')
+                p_strs.append(f"{s}-{e}")
+            self.periods_input.setText(", ".join(p_strs))
         else:
-            self.start_input.setDate(QDate.currentDate())
-            self.end_input.setDate(QDate.currentDate().addDays(7))
+            today = datetime.now().strftime("%Y/%m/%d")
+            next_week = (datetime.now() + timedelta(days=7)).strftime("%Y/%m/%d")
+            self.periods_input.setText(f"{today}-{next_week}")
             
         self.update_color_btn_style()
-            
-        self.layout.addRow("タスク名:", self.name_input)
-        self.layout.addRow("開始日:", self.start_input)
-        self.layout.addRow("終了日:", self.end_input)
-        self.layout.addRow("進捗率:", self.progress_input)
-        self.layout.addRow("バーの色:", self.color_btn)
         
         btn_layout = QHBoxLayout()
         self.ok_btn = QPushButton("OK")
         self.cancel_btn = QPushButton("キャンセル")
-        self.ok_btn.clicked.connect(self.accept)
+        self.ok_btn.clicked.connect(self.validate_and_accept)
         self.cancel_btn.clicked.connect(self.reject)
+        btn_layout.addStretch()
         btn_layout.addWidget(self.ok_btn)
         btn_layout.addWidget(self.cancel_btn)
-        self.layout.addRow(btn_layout)
+        main_layout.addLayout(btn_layout)
 
     def choose_color(self):
         color = QColorDialog.getColor(QColor(self.selected_color), self, "色を選択")
@@ -83,20 +102,51 @@ class TaskDialog(QDialog):
     def update_color_btn_style(self):
         self.color_btn.setStyleSheet(f"background-color: {self.selected_color}; color: white; border-radius: 4px; padding: 6px;")
 
+    def parse_date(self, s):
+        s = s.strip().replace('/', '-')
+        parts = s.split('-')
+        now = datetime.now()
+        if len(parts) == 3: # YYYY-MM-DD
+            return datetime.strptime(s, "%Y-%m-%d").strftime("%Y-%m-%d")
+        elif len(parts) == 2: # MM-DD
+            return f"{now.year}-{int(parts[0]):02d}-{int(parts[1]):02d}"
+        return None
+
+    def validate_and_accept(self):
+        if not self.get_periods():
+            QMessageBox.warning(self, "エラー", "期間の形式が正しくありません。\n例: 2026/04/01-04/05")
+            return
+        self.accept()
+
+    def get_periods(self):
+        text = self.periods_input.text()
+        text = text.replace(' ', '').replace(';', ',').replace('~', '-')
+        parts = text.split(',')
+        periods = []
+        for part in parts:
+            if not part: continue
+            if '-' in part:
+                s_part, e_part = part.split('-', 1)
+                start_d = self.parse_date(s_part)
+                end_d = self.parse_date(e_part)
+                if not start_d or not end_d: return None
+                periods.append({"start_date": start_d, "end_date": end_d})
+        return periods
+
     def get_data(self):
         return {
             "name": self.name_input.text(),
-            "start_date": self.start_input.date().toString(Qt.ISODate),
-            "end_date": self.end_input.date().toString(Qt.ISODate),
+            "periods": self.get_periods(),
             "progress": self.progress_input.value(),
             "color": self.selected_color
         }
 
 class GanttBarItem(QGraphicsRectItem):
-    def __init__(self, task, row, gantt_app, rect=None):
+    def __init__(self, task, row, period_index, gantt_app, rect=None):
         super().__init__(rect)
         self.task = task
         self.row = row
+        self.period_index = period_index
         self.app = gantt_app
         self.setFlags(QGraphicsRectItem.ItemIsMovable | 
                       QGraphicsRectItem.ItemIsSelectable | 
@@ -120,12 +170,44 @@ class GanttBarItem(QGraphicsRectItem):
         self.setBrush(QBrush(bc.lighter(150)))
         
         prog = self.task.get('progress', 0)
-        p_rect = QRectF(self.rect().left(), self.rect().top(), self.rect().width() * (prog / 100.0), self.rect().height())
+        
+        periods = self.task.get('periods', [self.task])
+        valid_periods = []
+        for i, p in enumerate(periods):
+            try:
+                sd = datetime.strptime(p.get('start_date', ''), "%Y-%m-%d")
+                ed = datetime.strptime(p.get('end_date', ''), "%Y-%m-%d")
+                valid_periods.append({'idx': i, 'start': sd, 'end': ed, 'days': (ed - sd).days + 1})
+            except Exception:
+                pass
+                
+        valid_periods.sort(key=lambda x: x['start'])
+        total_days = sum(p['days'] for p in valid_periods)
+        
+        target_days = total_days * (prog / 100.0)
+        
+        days_allocated_to_this = 0
+        for p in valid_periods:
+            if target_days <= 0:
+                break
+            allocate = min(p['days'], target_days)
+            if p['idx'] == self.period_index:
+                days_allocated_to_this = allocate
+                break
+            target_days -= allocate
+            
+        this_period = next((p for p in valid_periods if p['idx'] == self.period_index), None)
+        local_prog_ratio = (days_allocated_to_this / this_period['days']) if (this_period and this_period['days'] > 0) else 0
+        
+        p_rect = QRectF(self.rect().left(), self.rect().top(), self.rect().width() * local_prog_ratio, self.rect().height())
         self.progress_item.setRect(p_rect)
         self.progress_item.setBrush(QBrush(bc))
         self.progress_item.setPen(Qt.NoPen)
         self.text_item.setPos(5, (self.rect().height() - self.text_item.boundingRect().height()) / 2)
-        self.setToolTip(f"タスク: {self.task.get('name','')}\n期間: {self.task['start_date']}〜{self.task['end_date']}")
+        p_dict = self.task.get('periods', [self.task])[self.period_index] if 'periods' in self.task else self.task
+        start_d = p_dict.get('start_date', '')
+        end_d = p_dict.get('end_date', '')
+        self.setToolTip(f"タスク: {self.task.get('name','')}\n期間: {start_d}〜{end_d}")
 
     def mouseMoveEvent(self, event):
         snap = self.app.day_width * 0.25
@@ -159,8 +241,21 @@ class GanttBarItem(QGraphicsRectItem):
         
         sd = self.app.min_date + timedelta(days=sx / self.app.day_width)
         ed = sd + timedelta(days=sw / self.app.day_width - 0.001)
-        self.task['start_date'] = sd.strftime("%Y-%m-%d")
-        self.task['end_date'] = ed.strftime("%Y-%m-%d")
+        if 'periods' not in self.task:
+            self.task['periods'] = [{'start_date': self.task.get('start_date', ''), 'end_date': self.task.get('end_date', '')}]
+            
+        self.task['periods'][self.period_index]['start_date'] = sd.strftime("%Y-%m-%d")
+        self.task['periods'][self.period_index]['end_date'] = ed.strftime("%Y-%m-%d")
+        
+        # update single fields for backwards compatibility
+        self.task['start_date'] = self.task['periods'][0]['start_date']
+        self.task['end_date'] = self.task['periods'][0]['end_date']
+        
+        if self.scene():
+            for item in self.scene().items():
+                if isinstance(item, GanttBarItem) and item.task is self.task:
+                    item.update_appearance()
+                    
         self.app.sync_table_from_tasks()
 
     def mouseDoubleClickEvent(self, event):
@@ -322,12 +417,27 @@ class GanttApp(QMainWindow):
                 self.tasks.pop(r)
                 self.update_ui()
 
+    def get_task_dates(self, task):
+        s_dates = []
+        e_dates = []
+        periods = task.get('periods', [])
+        if not periods and 'start_date' in task:
+            periods = [{'start_date': task['start_date'], 'end_date': task['end_date']}]
+        for p in periods:
+            if p.get('start_date'): s_dates.append(p['start_date'])
+            if p.get('end_date'): e_dates.append(p['end_date'])
+        if s_dates and e_dates:
+            return min(s_dates), max(e_dates)
+        return "", ""
+
     def sync_table_from_tasks(self):
         for r, t in enumerate(self.tasks):
-            s = datetime.strptime(t['start_date'], "%Y-%m-%d")
-            e = datetime.strptime(t['end_date'], "%Y-%m-%d")
-            self.table.item(r, 2).setText(s.strftime("%m/%d"))
-            self.table.item(r, 3).setText(e.strftime("%m/%d"))
+            s_str, e_str = self.get_task_dates(t)
+            if s_str and e_str:
+                s = datetime.strptime(s_str, "%Y-%m-%d")
+                e = datetime.strptime(e_str, "%Y-%m-%d")
+                self.table.item(r, 2).setText(s.strftime("%m/%d"))
+                self.table.item(r, 3).setText(e.strftime("%m/%d"))
 
     def create_task_from_drag(self, x1, x2, y):
         snap = self.day_width * 0.25
@@ -340,8 +450,7 @@ class GanttApp(QMainWindow):
         
         t = {
             "name": f"新規 {len(self.tasks)+1}", 
-            "start_date": sd.strftime("%Y-%m-%d"), 
-            "end_date": ed.strftime("%Y-%m-%d"), 
+            "periods": [{"start_date": sd.strftime("%Y-%m-%d"), "end_date": ed.strftime("%Y-%m-%d")}],
             "progress": 0, 
             "color": "#0078d4"
         }
@@ -354,14 +463,20 @@ class GanttApp(QMainWindow):
     def update_ui(self):
         self.table.setRowCount(len(self.tasks))
         for r, t in enumerate(self.tasks):
-            self.table.setItem(r, 0, QTableWidgetItem(t['name']))
-            p_item = QTableWidgetItem(f"{t['progress']}%")
+            self.table.setItem(r, 0, QTableWidgetItem(t.get('name', '')))
+            p_item = QTableWidgetItem(f"{t.get('progress', 0)}%")
             p_item.setTextAlignment(Qt.AlignCenter)
             self.table.setItem(r, 1, p_item)
-            s = datetime.strptime(t['start_date'], "%Y-%m-%d")
-            e = datetime.strptime(t['end_date'], "%Y-%m-%d")
-            self.table.setItem(r, 2, QTableWidgetItem(s.strftime("%m/%d")))
-            self.table.setItem(r, 3, QTableWidgetItem(e.strftime("%m/%d")))
+            
+            s_str, e_str = self.get_task_dates(t)
+            if s_str and e_str:
+                s = datetime.strptime(s_str, "%Y-%m-%d")
+                e = datetime.strptime(e_str, "%Y-%m-%d")
+                self.table.setItem(r, 2, QTableWidgetItem(s.strftime("%m/%d")))
+                self.table.setItem(r, 3, QTableWidgetItem(e.strftime("%m/%d")))
+            else:
+                self.table.setItem(r, 2, QTableWidgetItem(""))
+                self.table.setItem(r, 3, QTableWidgetItem(""))
         self.draw_chart()
 
     def draw_chart(self):
@@ -432,15 +547,21 @@ class GanttApp(QMainWindow):
             
         for row, t in enumerate(self.tasks):
             try:
-                sd = datetime.strptime(t['start_date'], "%Y-%m-%d")
-                ed = datetime.strptime(t['end_date'], "%Y-%m-%d")
-                bar_w = ((ed - sd).days + 1) * self.day_width
-                bar = GanttBarItem(t, row, self, QRectF(0, 0, bar_w, self.row_height - 20))
-                bar.setPos((sd - self.min_date).days * self.day_width, row * self.row_height + 10)
-                bar.setZValue(30)
-                self.cs.addItem(bar)
+                periods = t.get('periods', [])
+                if not periods and 'start_date' in t:
+                    periods = [{'start_date': t['start_date'], 'end_date': t['end_date']}]
+                    
+                for p_idx, p in enumerate(periods):
+                    if not p.get('start_date') or not p.get('end_date'): continue
+                    sd = datetime.strptime(p['start_date'], "%Y-%m-%d")
+                    ed = datetime.strptime(p['end_date'], "%Y-%m-%d")
+                    bar_w = ((ed - sd).days + 1) * self.day_width
+                    bar = GanttBarItem(t, row, p_idx, self, QRectF(0, 0, bar_w, self.row_height - 20))
+                    bar.setPos((sd - self.min_date).days * self.day_width, row * self.row_height + 10)
+                    bar.setZValue(30)
+                    self.cs.addItem(bar)
             except Exception as e:
-                print(f"Error drawing bar: {e}")
+                print(f"Error drawing bar for task {row}: {e}")
                 
         self.hs.setSceneRect(0, 0, tw_total, self.header_height)
         self.cs.setSceneRect(0, 0, tw_total, ch)
