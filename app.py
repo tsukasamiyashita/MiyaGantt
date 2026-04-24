@@ -9,137 +9,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
 from PySide6.QtCore import Qt, QDate, QRectF, QPointF
 from PySide6.QtGui import QBrush, QPen, QColor, QFont, QPainter
 
-class TaskDialog(QDialog):
-    def __init__(self, parent=None, task=None):
-        super().__init__(parent)
-        self.setWindowTitle("タスクの編集" if task else "タスクの追加")
-        self.resize(450, 280)
-        self.setStyleSheet("""
-            QDialog { background-color: #f7f7f7; color: #333333; }
-            QLabel { color: #333333; font-size: 14px; }
-            QLineEdit, QSpinBox { 
-                background-color: #ffffff; 
-                color: #333333; 
-                border: 1px solid #cccccc; 
-                padding: 6px; 
-                border-radius: 4px; 
-            }
-            QPushButton { 
-                background-color: #0078d4; 
-                color: white; 
-                border-radius: 4px; 
-                padding: 8px 16px; 
-                font-weight: bold; 
-            }
-            QPushButton:hover { background-color: #0086f0; }
-        """)
-        
-        main_layout = QVBoxLayout(self)
-        form_layout = QFormLayout()
-        
-        self.name_input = QLineEdit()
-        self.progress_input = QSpinBox()
-        self.progress_input.setRange(0, 100)
-        self.progress_input.setSuffix(" %")
-        
-        self.color_btn = QPushButton("色を選択")
-        self.selected_color = "#0078d4"
-        self.color_btn.clicked.connect(self.choose_color)
-        
-        self.periods_input = QLineEdit()
-        self.periods_input.setPlaceholderText("例: 2026/04/01-04/05, 04/10-04/15")
-        
-        form_layout.addRow("タスク名:", self.name_input)
-        form_layout.addRow("進捗率:", self.progress_input)
-        form_layout.addRow("バーの色:", self.color_btn)
-        form_layout.addRow("期間指定:", self.periods_input)
-        
-        main_layout.addLayout(form_layout)
-        
-        hint = QLabel("※ カンマ区切りで複数指定可 (月/日-月/日 や 年/月/日-年/月/日)")
-        hint.setStyleSheet("font-size: 11px; color: #666;")
-        main_layout.addWidget(hint)
-        
-        main_layout.addStretch()
-        
-        if task:
-            self.name_input.setText(task.get('name', ''))
-            self.progress_input.setValue(task.get('progress', 0))
-            self.selected_color = task.get('color', '#0078d4')
-            periods = task.get('periods', [])
-            if not periods and 'start_date' in task and 'end_date' in task:
-                periods = [{'start_date': task['start_date'], 'end_date': task['end_date']}]
-            
-            p_strs = []
-            for p in periods:
-                s = p.get('start_date', '').replace('-', '/')
-                e = p.get('end_date', '').replace('-', '/')
-                p_strs.append(f"{s}-{e}")
-            self.periods_input.setText(", ".join(p_strs))
-        else:
-            today = datetime.now().strftime("%Y/%m/%d")
-            next_week = (datetime.now() + timedelta(days=7)).strftime("%Y/%m/%d")
-            self.periods_input.setText(f"{today}-{next_week}")
-            
-        self.update_color_btn_style()
-        
-        btn_layout = QHBoxLayout()
-        self.ok_btn = QPushButton("OK")
-        self.cancel_btn = QPushButton("キャンセル")
-        self.ok_btn.clicked.connect(self.validate_and_accept)
-        self.cancel_btn.clicked.connect(self.reject)
-        btn_layout.addStretch()
-        btn_layout.addWidget(self.ok_btn)
-        btn_layout.addWidget(self.cancel_btn)
-        main_layout.addLayout(btn_layout)
-
-    def choose_color(self):
-        color = QColorDialog.getColor(QColor(self.selected_color), self, "色を選択")
-        if color.isValid():
-            self.selected_color = color.name()
-            self.update_color_btn_style()
-            
-    def update_color_btn_style(self):
-        self.color_btn.setStyleSheet(f"background-color: {self.selected_color}; color: white; border-radius: 4px; padding: 6px;")
-
-    def parse_date(self, s):
-        s = s.strip().replace('/', '-')
-        parts = s.split('-')
-        now = datetime.now()
-        if len(parts) == 3: # YYYY-MM-DD
-            return datetime.strptime(s, "%Y-%m-%d").strftime("%Y-%m-%d")
-        elif len(parts) == 2: # MM-DD
-            return f"{now.year}-{int(parts[0]):02d}-{int(parts[1]):02d}"
-        return None
-
-    def validate_and_accept(self):
-        if not self.get_periods():
-            QMessageBox.warning(self, "エラー", "期間の形式が正しくありません。\n例: 2026/04/01-04/05")
-            return
-        self.accept()
-
-    def get_periods(self):
-        text = self.periods_input.text()
-        text = text.replace(' ', '').replace(';', ',').replace('~', '-')
-        parts = text.split(',')
-        periods = []
-        for part in parts:
-            if not part: continue
-            if '-' in part:
-                s_part, e_part = part.split('-', 1)
-                start_d = self.parse_date(s_part)
-                end_d = self.parse_date(e_part)
-                if not start_d or not end_d: return None
-                periods.append({"start_date": start_d, "end_date": end_d})
-        return periods
-
-    def get_data(self):
-        return {
-            "name": self.name_input.text(),
-            "periods": self.get_periods(),
-            "progress": self.progress_input.value(),
-            "color": self.selected_color
-        }
+# TaskDialog was removed in favor of inline editing.
 
 class GanttBarItem(QGraphicsRectItem):
     def __init__(self, task, row, period_index, gantt_app, rect=None):
@@ -259,7 +129,7 @@ class GanttBarItem(QGraphicsRectItem):
         self.app.sync_table_from_tasks()
 
     def mouseDoubleClickEvent(self, event):
-        self.app.edit_task(self.row)
+        # Prevent default double click which was old edit open
         super().mouseDoubleClickEvent(event)
 
 class ChartScene(QGraphicsScene):
@@ -315,13 +185,10 @@ class GanttApp(QMainWindow):
         tl = QHBoxLayout()
         
         self.btn_add = QPushButton("追加")
-        self.btn_edit = QPushButton("編集")
         self.btn_del = QPushButton("削除")
         self.btn_add.clicked.connect(self.add_task)
-        self.btn_edit.clicked.connect(self.edit_task)
         self.btn_del.clicked.connect(self.delete_task)
         tl.addWidget(self.btn_add)
-        tl.addWidget(self.btn_edit)
         tl.addWidget(self.btn_del)
         tl.addStretch()
         
@@ -343,13 +210,16 @@ class GanttApp(QMainWindow):
         ml.addWidget(self.splitter)
         
         self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["タスク名", "進捗", "開始日", "終了日"])
+        self.table.setHorizontalHeaderLabels(["タスク名", "進捗(%)", "期間指定", "色"])
         self.table.horizontalHeader().setFixedHeight(self.header_height)
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self.table.verticalHeader().setDefaultSectionSize(self.row_height)
         self.table.verticalHeader().setVisible(False)
-        self.table.setSelectionBehavior(QTableWidget.SelectRows)
-        self.table.cellDoubleClicked.connect(lambda r, c: self.edit_task(r))
+        self.table.setSelectionBehavior(QTableWidget.SelectItems)
+        
+        self.table.itemChanged.connect(self.on_table_item_changed)
+        self.table.cellDoubleClicked.connect(self.on_table_cell_double_clicked)
+        
         self.splitter.addWidget(self.table)
         
         rc = QWidget()
@@ -395,20 +265,42 @@ class GanttApp(QMainWindow):
         self.day_width = v
         self.update_ui()
 
-    def add_task(self):
-        dlg = TaskDialog(self)
-        if dlg.exec():
-            self.tasks.append(dlg.get_data())
-            self.update_ui()
+    def parse_date(self, s):
+        s = s.strip().replace('/', '-')
+        parts = s.split('-')
+        now = datetime.now()
+        if len(parts) == 3: # YYYY-MM-DD
+            return datetime.strptime(s, "%Y-%m-%d").strftime("%Y-%m-%d")
+        elif len(parts) == 2: # MM-DD
+            return f"{now.year}-{int(parts[0]):02d}-{int(parts[1]):02d}"
+        return None
 
-    def edit_task(self, r=None):
-        if r is None:
-            r = self.table.currentRow()
-        if 0 <= r < len(self.tasks):
-            dlg = TaskDialog(self, self.tasks[r])
-            if dlg.exec():
-                self.tasks[r] = dlg.get_data()
-                self.update_ui()
+    def get_periods_from_string(self, text):
+        text = text.replace(' ', '').replace(';', ',').replace('~', '-')
+        parts = text.split(',')
+        periods = []
+        for part in parts:
+            if not part: continue
+            if '-' in part:
+                s_part, e_part = part.split('-', 1)
+                start_d = self.parse_date(s_part)
+                end_d = self.parse_date(e_part)
+                if not start_d or not end_d: return None
+                periods.append({"start_date": start_d, "end_date": end_d})
+        return periods
+
+    def add_task(self):
+        today = datetime.now()
+        next_week = today + timedelta(days=7)
+        t = {
+            "name": f"新規タスク {len(self.tasks)+1}",
+            "periods": [{"start_date": today.strftime("%Y-%m-%d"), "end_date": next_week.strftime("%Y-%m-%d")}],
+            "progress": 0,
+            "color": "#0078d4"
+        }
+        self.tasks.append(t)
+        self.update_ui()
+        self.table.editItem(self.table.item(len(self.tasks)-1, 0))
 
     def delete_task(self):
         r = self.table.currentRow()
@@ -431,13 +323,20 @@ class GanttApp(QMainWindow):
         return "", ""
 
     def sync_table_from_tasks(self):
+        self.table.blockSignals(True)
         for r, t in enumerate(self.tasks):
-            s_str, e_str = self.get_task_dates(t)
-            if s_str and e_str:
-                s = datetime.strptime(s_str, "%Y-%m-%d")
-                e = datetime.strptime(e_str, "%Y-%m-%d")
-                self.table.item(r, 2).setText(s.strftime("%m/%d"))
-                self.table.item(r, 3).setText(e.strftime("%m/%d"))
+            periods = t.get('periods', [])
+            p_strs = []
+            for p in periods:
+                if not p.get('start_date') or not p.get('end_date'): continue
+                s = p['start_date'].replace('-', '/')
+                e = p['end_date'].replace('-', '/')
+                p_strs.append(f"{s}-{e}")
+            
+            period_item = self.table.item(r, 2)
+            if period_item:
+                period_item.setText(", ".join(p_strs))
+        self.table.blockSignals(False)
 
     def create_task_from_drag(self, x1, x2, y):
         snap = self.day_width * 0.25
@@ -461,23 +360,69 @@ class GanttApp(QMainWindow):
         self.update_ui()
 
     def update_ui(self):
+        self.table.blockSignals(True)
         self.table.setRowCount(len(self.tasks))
         for r, t in enumerate(self.tasks):
-            self.table.setItem(r, 0, QTableWidgetItem(t.get('name', '')))
-            p_item = QTableWidgetItem(f"{t.get('progress', 0)}%")
-            p_item.setTextAlignment(Qt.AlignCenter)
-            self.table.setItem(r, 1, p_item)
+            item_name = QTableWidgetItem(t.get('name', ''))
+            self.table.setItem(r, 0, item_name)
             
-            s_str, e_str = self.get_task_dates(t)
-            if s_str and e_str:
-                s = datetime.strptime(s_str, "%Y-%m-%d")
-                e = datetime.strptime(e_str, "%Y-%m-%d")
-                self.table.setItem(r, 2, QTableWidgetItem(s.strftime("%m/%d")))
-                self.table.setItem(r, 3, QTableWidgetItem(e.strftime("%m/%d")))
-            else:
-                self.table.setItem(r, 2, QTableWidgetItem(""))
-                self.table.setItem(r, 3, QTableWidgetItem(""))
+            item_prog = QTableWidgetItem(str(t.get('progress', 0)))
+            item_prog.setTextAlignment(Qt.AlignCenter)
+            self.table.setItem(r, 1, item_prog)
+            
+            periods = t.get('periods', [])
+            p_strs = []
+            for p in periods:
+                if not p.get('start_date') or not p.get('end_date'): continue
+                s = p['start_date'].replace('-', '/')
+                e = p['end_date'].replace('-', '/')
+                p_strs.append(f"{s}-{e}")
+                
+            item_period = QTableWidgetItem(", ".join(p_strs))
+            self.table.setItem(r, 2, item_period)
+            
+            item_color = QTableWidgetItem("")
+            item_color.setBackground(QColor(t.get('color', '#0078d4')))
+            item_color.setFlags(item_color.flags() & ~Qt.ItemIsEditable) 
+            self.table.setItem(r, 3, item_color)
+            
+        self.table.blockSignals(False)
         self.draw_chart()
+
+    def on_table_item_changed(self, item):
+        row = item.row()
+        col = item.column()
+        if row >= len(self.tasks) or row < 0: return
+        t = self.tasks[row]
+        
+        if col == 0:
+            t['name'] = item.text()
+        elif col == 1:
+            try:
+                prog = int(item.text().replace('%', '').strip())
+                t['progress'] = max(0, min(100, prog))
+            except ValueError:
+                pass
+            self.table.blockSignals(True)
+            item.setText(str(t['progress']))
+            self.table.blockSignals(False)
+        elif col == 2:
+            period_str = item.text()
+            parsed = self.get_periods_from_string(period_str)
+            if parsed:
+                t['periods'] = parsed
+            else:
+                QMessageBox.warning(self, "エラー", "期間の形式が正しくありません。\n例: 04/01-04/05")
+        
+        self.draw_chart()
+
+    def on_table_cell_double_clicked(self, row, col):
+        if col == 3: # Color column
+            t = self.tasks[row]
+            color = QColorDialog.getColor(QColor(t.get('color', '#0078d4')), self, "色を選択")
+            if color.isValid():
+                t['color'] = color.name()
+                self.update_ui()
 
     def draw_chart(self):
         self.hs.clear()
