@@ -56,6 +56,8 @@ class GanttBarItem(QGraphicsRectItem):
         self.text_item.setZValue(1)
         font = QFont("Segoe UI", 9, QFont.Bold)
         self.text_item.setFont(font)
+        self.progress_item.setAcceptHoverEvents(False)
+        self.text_item.setAcceptHoverEvents(False)
         
         self.resizing_left = False
         self.resizing_right = False
@@ -115,7 +117,11 @@ class GanttBarItem(QGraphicsRectItem):
 
     def hoverMoveEvent(self, event):
         x = event.pos().x()
-        if x < 10 or x > self.rect().width() - 10:
+        w = self.rect().width()
+        # 1日の場合や幅が狭い場合でも確実に反応するように調整
+        margin = 12 if w <= self.app.day_width else 10
+        margin = min(margin, w / 2 - 2)
+        if x < margin or x > w - margin:
             self.setCursor(Qt.SizeHorCursor)
         else:
             self.setCursor(Qt.OpenHandCursor)
@@ -128,9 +134,12 @@ class GanttBarItem(QGraphicsRectItem):
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
             x = event.pos().x()
-            if x < 10:
+            w = self.rect().width()
+            margin = 12 if w <= self.app.day_width else 10
+            margin = min(margin, w / 2 - 2)
+            if x < margin:
                 self.resizing_left = True
-            elif x > self.rect().width() - 10:
+            elif x > w - margin:
                 self.resizing_right = True
             else:
                 self.setCursor(Qt.ClosedHandCursor)
@@ -159,6 +168,7 @@ class GanttBarItem(QGraphicsRectItem):
         self.update_appearance()
 
     def mouseReleaseEvent(self, event):
+        was_resizing = self.resizing_left or self.resizing_right
         self.resizing_left = self.resizing_right = False
         self.setCursor(Qt.OpenHandCursor)
         snap = self.app.day_width
@@ -172,7 +182,8 @@ class GanttBarItem(QGraphicsRectItem):
         new_row = int(event.scenePos().y() / self.app.row_height)
         new_row = max(0, min(len(self.app.tasks) - 1, new_row)) if self.app.tasks else 0
         
-        if new_row != self.row:
+        # サイズ調整中ではなかった場合のみ行移動を許可
+        if not was_resizing and new_row != self.row:
             # 移動元・移動先の両方で 'periods' 形式を確定させる
             for t in [self.task, self.app.tasks[new_row]]:
                 if 'periods' not in t:
@@ -269,10 +280,8 @@ class ChartScene(QGraphicsScene):
                 task = self.app.tasks[row]
                 task_name = task.get('name', '無題')
                 add_period_action = menu.addAction(f"「{task_name}」に期間を追加")
-                add_new_task_action = menu.addAction("ここに新しいタスクを挿入")
             else:
                 add_period_action = None
-                add_new_task_action = menu.addAction("新規タスクの追加")
             
             action = menu.exec(e.screenPos())
             x = e.scenePos().x()
@@ -280,22 +289,10 @@ class ChartScene(QGraphicsScene):
             day_idx = int(x / self.app.day_width)
             d_str = (self.app.min_date + timedelta(days=day_idx)).strftime("%Y-%m-%d")
             
-            if action == add_period_action:
+            if action == add_period_action and add_period_action:
                 if 'periods' not in task:
                     task['periods'] = [{'start_date': task.get('start_date', ''), 'end_date': task.get('end_date', '')}]
                 task['periods'].append({"start_date": d_str, "end_date": d_str})
-                self.app.update_ui()
-            elif action == add_new_task_action:
-                t = {
-                    "name": f"新規 {len(self.app.tasks)+1}", 
-                    "periods": [{"start_date": d_str, "end_date": d_str}],
-                    "progress": 0, 
-                    "color": "#0078d4"
-                }
-                if 0 <= row < len(self.app.tasks):
-                    self.app.tasks.insert(row, t)
-                else:
-                    self.app.tasks.append(t)
                 self.app.update_ui()
         else:
             super().contextMenuEvent(e)
@@ -510,10 +507,9 @@ class GanttApp(QMainWindow):
         return periods
 
     def add_task(self):
-        today = datetime.now()
         t = {
             "name": f"新規タスク {len(self.tasks)+1}",
-            "periods": [{"start_date": today.strftime("%Y-%m-%d"), "end_date": today.strftime("%Y-%m-%d")}],
+            "periods": [],
             "progress": 0,
             "color": "#0078d4"
         }
