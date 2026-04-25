@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                QHBoxLayout, QPushButton, QTableWidget, QTableWidgetItem, 
                                QHeaderView, QSplitter, QGraphicsView, QGraphicsScene, 
                                QDialog, QFormLayout, QLineEdit, QDateEdit, QMessageBox, 
-                               QFileDialog, QGraphicsRectItem, QGraphicsTextItem, QSlider, QLabel, QMenu, QSpinBox, QColorDialog, QComboBox)
+                               QFileDialog, QGraphicsRectItem, QGraphicsTextItem, QSlider, QLabel, QMenu, QSpinBox, QColorDialog, QComboBox, QInputDialog)
 from PySide6.QtCore import Qt, QDate, QRectF, QPointF, QTimer
 from PySide6.QtGui import QBrush, QPen, QColor, QFont, QPainter
 
@@ -51,7 +51,8 @@ class GanttBarItem(QGraphicsRectItem):
         self.setAcceptHoverEvents(True)
         
         self.progress_item = QGraphicsRectItem(self)
-        self.text_item = QGraphicsTextItem(task.get('name', ''), self)
+        # 初期テキストの設定（update_appearanceで上書きされるため空でも可）
+        self.text_item = QGraphicsTextItem('', self)
         self.text_item.setDefaultTextColor(Qt.white)
         self.text_item.setZValue(1)
         font = QFont("Segoe UI", 9, QFont.Bold)
@@ -102,14 +103,17 @@ class GanttBarItem(QGraphicsRectItem):
         self.progress_item.setRect(p_rect)
         self.progress_item.setBrush(QBrush(bc))
         self.progress_item.setPen(Qt.NoPen)
-        self.text_item.setPos(5, (self.rect().height() - self.text_item.boundingRect().height()) / 2)
-        
         # ツールチップ更新用のデータ取得
         periods = self.task.get('periods')
         if periods is not None and self.period_index < len(periods):
             p_dict = periods[self.period_index]
         else:
             p_dict = self.task
+
+        # バー固有のテキスト（無ければ空）を表示
+        bar_text = p_dict.get('text', '')
+        self.text_item.setPlainText(bar_text)
+        self.text_item.setPos(5, (self.rect().height() - self.text_item.boundingRect().height()) / 2)
 
         start_d = p_dict.get('start_date', '')
         end_d = p_dict.get('end_date', '')
@@ -233,6 +237,20 @@ class GanttBarItem(QGraphicsRectItem):
     def mouseDoubleClickEvent(self, event):
         # Prevent default double click which was old edit open
         super().mouseDoubleClickEvent(event)
+        
+        # ダブルクリックでバー固有のテキストを編集
+        if 'periods' not in self.task:
+            self.task['periods'] = [{'start_date': self.task.get('start_date', ''), 'end_date': self.task.get('end_date', '')}]
+            
+        if 0 <= self.period_index < len(self.task['periods']):
+            p_dict = self.task['periods'][self.period_index]
+            current_text = p_dict.get('text', '')
+            
+            text, ok = QInputDialog.getText(self.app, "テキストの編集", "バーに表示するテキスト:", QLineEdit.Normal, current_text)
+            if ok:
+                p_dict['text'] = text
+                self.update_appearance()
+                self.app.update_ui() # 全体を再描画して確実に反映させる
 
     def contextMenuEvent(self, event):
         menu = QMenu()
@@ -263,6 +281,29 @@ class ChartScene(QGraphicsScene):
                     self.app.create_task_from_drag(self.start_x, e.scenePos().x(), e.scenePos().y())
             self.start_x = 0
         super().mouseReleaseEvent(e)
+
+    def mouseDoubleClickEvent(self, e):
+        items = self.items(e.scenePos(), Qt.IntersectsItemShape, Qt.DescendingOrder, self.app.chart_view.transform())
+        gantt_item = next((it for it in items if isinstance(it, GanttBarItem)), None)
+            
+        if not gantt_item and e.button() == Qt.LeftButton:
+            y = e.scenePos().y()
+            row = int(y / self.app.row_height)
+            if 0 <= row < len(self.app.tasks):
+                task = self.app.tasks[row]
+                x = e.scenePos().x()
+                day_idx = int(x / self.app.day_width)
+                d_str = (self.app.min_date + timedelta(days=day_idx)).strftime("%Y-%m-%d")
+                
+                if 'periods' not in task:
+                    task['periods'] = [{'start_date': task.get('start_date', ''), 'end_date': task.get('end_date', '')}]
+                
+                # 新しい期間（空のテキスト）を追加
+                task['periods'].append({"start_date": d_str, "end_date": d_str, "text": ""})
+                self.app.update_ui()
+                e.accept()
+                return # 新しく作成されたバーにダブルクリックイベントが伝播するのを防ぐ
+        super().mouseDoubleClickEvent(e)
 
     def contextMenuEvent(self, e):
         # 背景（アイテムがない場所）を右クリックした場合のみメニューを表示
