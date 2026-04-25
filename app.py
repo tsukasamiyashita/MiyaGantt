@@ -1,15 +1,42 @@
 import sys
 import json
+import calendar
 from datetime import datetime, timedelta
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QHBoxLayout, QPushButton, QTableWidget, QTableWidgetItem, 
                                QHeaderView, QSplitter, QGraphicsView, QGraphicsScene, 
                                QDialog, QFormLayout, QLineEdit, QDateEdit, QMessageBox, 
-                               QFileDialog, QGraphicsRectItem, QGraphicsTextItem, QSlider, QLabel, QMenu, QSpinBox, QColorDialog)
+                               QFileDialog, QGraphicsRectItem, QGraphicsTextItem, QSlider, QLabel, QMenu, QSpinBox, QColorDialog, QComboBox)
 from PySide6.QtCore import Qt, QDate, QRectF, QPointF
 from PySide6.QtGui import QBrush, QPen, QColor, QFont, QPainter
 
 # TaskDialog was removed in favor of inline editing.
+
+class SettingsDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("表示設定")
+        self.layout = QFormLayout(self)
+        
+        self.start_date_edit = QDateEdit(self)
+        self.start_date_edit.setCalendarPopup(True)
+        self.start_date_edit.setDate(parent.min_date.date() if parent else QDate.currentDate())
+        
+        self.unit_combo = QComboBox(self)
+        self.unit_combo.addItems(["週間", "月間", "年間"])
+        self.unit_combo.setCurrentIndex(parent.display_unit if parent else 1)
+        
+        self.count_spinbox = QSpinBox(self)
+        self.count_spinbox.setRange(1, 500)
+        self.count_spinbox.setValue(parent.display_count if parent else 6)
+        
+        self.layout.addRow("表示開始日:", self.start_date_edit)
+        self.layout.addRow("表示単位:", self.unit_combo)
+        self.layout.addRow("表示数:", self.count_spinbox)
+        
+        self.btn_ok = QPushButton("OK", self)
+        self.btn_ok.clicked.connect(self.accept)
+        self.layout.addRow(self.btn_ok)
 
 class GanttBarItem(QGraphicsRectItem):
     def __init__(self, task, row, period_index, gantt_app, rect=None):
@@ -237,10 +264,15 @@ class GanttApp(QMainWindow):
         self.setWindowTitle("MiyaGantt - Professional Gantt Chart")
         self.resize(1380, 850)
         self.tasks = []
-        self.day_width = 80
+        self.day_width = 40
         self.row_height = 40
         self.header_height = 70
         self.min_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=14)
+        self.display_unit = 1  # 0: 週間, 1: 月間, 2: 年間
+        self.display_count = 6
+        self.zoom_unit = 1     # 0: 週間, 1: 月間, 2: 年間
+        self.zoom_count = 3    # デフォルトで3ヶ月分を1画面に収める
+        self.update_display_days()
         self.month_label_items = []
         
         self.init_ui()
@@ -270,18 +302,29 @@ class GanttApp(QMainWindow):
         tl.addWidget(self.btn_del)
         tl.addStretch()
         
-        tl.addWidget(QLabel("ズーム:"))
-        self.zs = QSlider(Qt.Horizontal)
-        self.zs.setRange(40, 400); self.zs.setValue(self.day_width); self.zs.setFixedWidth(150)
-        self.zs.valueChanged.connect(self.change_zoom)
-        tl.addWidget(self.zs)
+        tl.addWidget(QLabel("1画面の表示枠:"))
+        self.zoom_unit_combo = QComboBox()
+        self.zoom_unit_combo.addItems(["週間", "月間", "年間"])
+        self.zoom_unit_combo.setCurrentIndex(self.zoom_unit)
+        self.zoom_unit_combo.currentIndexChanged.connect(self.on_zoom_changed)
+        tl.addWidget(self.zoom_unit_combo)
+        
+        tl.addWidget(QLabel("枠に収める数:"))
+        self.zoom_count_spin = QSpinBox()
+        self.zoom_count_spin.setRange(1, 100)
+        self.zoom_count_spin.setValue(self.zoom_count)
+        self.zoom_count_spin.valueChanged.connect(self.on_zoom_changed)
+        tl.addWidget(self.zoom_count_spin)
         
         self.btn_load = QPushButton("読込")
         self.btn_save = QPushButton("保存")
+        self.btn_settings = QPushButton("表示設定")
         self.btn_load.clicked.connect(self.load_data)
         self.btn_save.clicked.connect(self.save_data)
+        self.btn_settings.clicked.connect(self.open_settings)
         tl.addWidget(self.btn_load)
         tl.addWidget(self.btn_save)
+        tl.addWidget(self.btn_settings)
         ml.addLayout(tl)
         
         self.splitter = QSplitter(Qt.Horizontal)
@@ -346,6 +389,59 @@ class GanttApp(QMainWindow):
     def change_zoom(self, v):
         self.day_width = v
         self.update_ui()
+
+    def calculate_day_width(self):
+        # 1画面に収める日数を計算
+        if self.zoom_unit == 0:
+            days = self.zoom_count * 7
+        elif self.zoom_unit == 1:
+            days = self.zoom_count * 30.416
+        else:
+            days = self.zoom_count * 365.25
+            
+        view_width = self.chart_view.viewport().width() if hasattr(self, 'chart_view') else 1000
+        if view_width < 100:
+            view_width = 1000
+            
+        self.day_width = max(1.0, view_width / max(1.0, days))
+
+    def on_zoom_changed(self, *_):
+        self.zoom_unit = self.zoom_unit_combo.currentIndex()
+        self.zoom_count = self.zoom_count_spin.value()
+        self.calculate_day_width()
+        self.update_ui()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, 'chart_view'):
+            self.calculate_day_width()
+            self.draw_chart()
+
+    def update_display_range(self):
+        self.update_display_days()
+        self.update_ui()
+
+    def update_display_days(self):
+        # 単位と数に基づいて表示日数を計算する
+        if self.display_unit == 0: # 週間
+            self.display_days = self.display_count * 7
+        elif self.display_unit == 1: # 月間
+            m = self.min_date.month - 1 + self.display_count
+            y = self.min_date.year + m // 12
+            m = m % 12 + 1
+            last_day = calendar.monthrange(y, m)[1]
+            d = min(self.min_date.day, last_day)
+            end_date = datetime(y, m, d)
+            self.display_days = max(1, (end_date - self.min_date).days)
+        elif self.display_unit == 2: # 年間
+            count_months = self.display_count * 12
+            m = self.min_date.month - 1 + count_months
+            y = self.min_date.year + m // 12
+            m = m % 12 + 1
+            last_day = calendar.monthrange(y, m)[1]
+            d = min(self.min_date.day, last_day)
+            end_date = datetime(y, m, d)
+            self.display_days = max(1, (end_date - self.min_date).days)
 
     def parse_date(self, s):
         s = s.strip().replace('/', '-')
@@ -505,15 +601,26 @@ class GanttApp(QMainWindow):
                 t['color'] = color.name()
                 self.update_ui()
 
+    def open_settings(self):
+        dlg = SettingsDialog(self)
+        if dlg.exec():
+            # QDate を Python の datetime に変換
+            qd = dlg.start_date_edit.date()
+            self.min_date = datetime(qd.year(), qd.month(), qd.day())
+            self.display_unit = dlg.unit_combo.currentIndex()
+            self.display_count = dlg.count_spinbox.value()
+            
+            self.update_display_range()
+
     def draw_chart(self):
         self.month_label_items = []
         self.hs.clear()
         self.cs.clear()
-        tw_total = 150 * self.day_width
+        tw_total = self.display_days * self.day_width
         ch = max(self.chart_view.height(), (len(self.tasks) + 10) * self.row_height)
         
         last_m = None
-        for i in range(150):
+        for i in range(self.display_days):
             d = self.min_date + timedelta(days=i)
             x = i * self.day_width
             
@@ -528,25 +635,29 @@ class GanttApp(QMainWindow):
             gl = self.cs.addLine(x, 0, x, ch, QPen(QColor(220, 220, 220), 1))
             gl.setZValue(-15)
             gl.setAcceptedMouseButtons(Qt.NoButton)
-            for h in [6, 12, 18]:
-                sl = self.cs.addLine(x + (self.day_width * h / 24.0), 0, x + (self.day_width * h / 24.0), ch, QPen(QColor(245, 245, 245), 0.5))
-                sl.setZValue(-15)
-                sl.setAcceptedMouseButtons(Qt.NoButton)
+            
+            if self.day_width >= 60:
+                for h in [6, 12, 18]:
+                    sl = self.cs.addLine(x + (self.day_width * h / 24.0), 0, x + (self.day_width * h / 24.0), ch, QPen(QColor(245, 245, 245), 0.5))
+                    sl.setZValue(-15)
+                    sl.setAcceptedMouseButtons(Qt.NoButton)
             
             # ヘッダー (日付・曜日)
-            self.hs.addRect(x, 35, self.day_width, 35, QPen(QColor(200, 200, 200)), QBrush(QColor(245, 245, 245))).setZValue(5)
-            dl = self.hs.addText(d.strftime("%d"))
-            dl.setDefaultTextColor(QColor(50, 50, 50))
-            dl.setFont(QFont("Segoe UI", 10, QFont.Bold))
-            dl.setPos(x + (self.day_width/2) - 13, 35)
-            dl.setZValue(10)
+            self.hs.addRect(x, 35, self.day_width, 35, QPen(QColor(210, 210, 210)), QBrush(QColor(248, 248, 248))).setZValue(5)
             
-            w_c = QColor(0, 80, 200) if d.weekday()==5 else QColor(220, 0, 0) if d.weekday()==6 else QColor(60, 60, 60)
-            yl = self.hs.addText(["月","火","水","木","金","土","日"][d.weekday()])
-            yl.setDefaultTextColor(w_c)
-            yl.setFont(QFont("Segoe UI", 8))
-            yl.setPos(x + (self.day_width/2) - 10, 50)
-            yl.setZValue(10)
+            if self.day_width >= 35:
+                dl = self.hs.addText(d.strftime("%d"))
+                dl.setDefaultTextColor(QColor(50, 50, 50))
+                dl.setFont(QFont("Segoe UI", 9, QFont.Bold))
+                dl.setPos(x + (self.day_width/2) - 10, 35)
+                dl.setZValue(10)
+                
+                w_c = QColor(0, 80, 200) if d.weekday()==5 else QColor(220, 0, 0) if d.weekday()==6 else QColor(60, 60, 60)
+                yl = self.hs.addText(["月","火","水","木","金","土","日"][d.weekday()])
+                yl.setDefaultTextColor(w_c)
+                yl.setFont(QFont("Segoe UI", 7))
+                yl.setPos(x + (self.day_width/2) - 8, 52)
+                yl.setZValue(10)
             
             # 年月ラベル (Sticky)
             if (cm := d.strftime("%Y/%m")) != last_m:
@@ -602,8 +713,18 @@ class GanttApp(QMainWindow):
         p = QFileDialog.getSaveFileName(self, "保存", "", "JSON (*.json)")[0]
         if p:
             try:
+                data_to_save = {
+                    "settings": {
+                        "min_date": self.min_date.strftime("%Y-%m-%d"),
+                        "display_unit": self.display_unit,
+                        "display_count": self.display_count,
+                        "zoom_unit": self.zoom_unit,
+                        "zoom_count": self.zoom_count
+                    },
+                    "tasks": self.tasks
+                }
                 with open(p, 'w', encoding='utf-8') as f:
-                    json.dump(self.tasks, f, ensure_ascii=False, indent=4)
+                    json.dump(data_to_save, f, ensure_ascii=False, indent=4)
                 QMessageBox.information(self, "成功", "保存しました。")
             except Exception as e:
                 QMessageBox.critical(self, "エラー", f"保存失敗: {e}")
@@ -613,7 +734,53 @@ class GanttApp(QMainWindow):
         if p:
             try:
                 with open(p, 'r', encoding='utf-8') as f:
-                    self.tasks = json.load(f)
+                    loaded_data = json.load(f)
+                
+                if isinstance(loaded_data, dict) and "tasks" in loaded_data:
+                    self.tasks = loaded_data["tasks"]
+                    settings = loaded_data.get("settings", {})
+                    min_date_str = settings.get("min_date")
+                    if min_date_str:
+                        self.min_date = datetime.strptime(min_date_str, "%Y-%m-%d")
+                    else:
+                        self.min_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=14)
+                    
+                    self.display_unit = settings.get("display_unit")
+                    self.display_count = settings.get("display_count")
+                    
+                    if self.display_unit is None or self.display_count is None:
+                        # 互換性処理
+                        if "display_months" in settings:
+                            self.display_unit = 1
+                            self.display_count = settings["display_months"]
+                        else:
+                            days = settings.get("display_days", 150)
+                            self.display_unit = 1
+                            self.display_count = max(1, round(days / 30))
+                    
+                    self.zoom_unit = settings.get("zoom_unit", 1)
+                    self.zoom_count = settings.get("zoom_count", 3)
+                    
+                    # 読込後の状態をUIに反映
+                    self.zoom_unit_combo.blockSignals(True)
+                    self.zoom_count_spin.blockSignals(True)
+                    self.zoom_unit_combo.setCurrentIndex(self.zoom_unit)
+                    self.zoom_count_spin.setValue(self.zoom_count)
+                    self.zoom_unit_combo.blockSignals(False)
+                    self.zoom_count_spin.blockSignals(False)
+                    
+                    self.calculate_day_width()
+                    self.update_display_days()
+                else:
+                    self.tasks = loaded_data
+                    self.min_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=14)
+                    self.display_unit = 1
+                    self.display_count = 6
+                    self.zoom_unit = 1
+                    self.zoom_count = 3
+                    self.calculate_day_width()
+                    self.update_display_days()
+                    
                 self.update_ui()
             except Exception as e:
                 QMessageBox.critical(self, "エラー", f"読込失敗: {e}")
