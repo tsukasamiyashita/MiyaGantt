@@ -267,11 +267,11 @@ class GanttApp(QMainWindow):
         self.day_width = 40
         self.row_height = 40
         self.header_height = 70
-        self.min_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=14)
+        self.min_date = datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         self.display_unit = 1  # 0: 週間, 1: 月間, 2: 年間
         self.display_count = 6
         self.zoom_unit = 1     # 0: 週間, 1: 月間, 2: 年間
-        self.zoom_count = 3    # デフォルトで3ヶ月分を1画面に収める
+        self.zoom_count = 1    # デフォルトで1単位分を1画面に収める
         self.update_display_days()
         self.month_label_items = []
         
@@ -743,7 +743,7 @@ class GanttApp(QMainWindow):
                     if min_date_str:
                         self.min_date = datetime.strptime(min_date_str, "%Y-%m-%d")
                     else:
-                        self.min_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=14)
+                        self.min_date = datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
                     
                     self.display_unit = settings.get("display_unit")
                     self.display_count = settings.get("display_count")
@@ -759,7 +759,7 @@ class GanttApp(QMainWindow):
                             self.display_count = max(1, round(days / 30))
                     
                     self.zoom_unit = settings.get("zoom_unit", 1)
-                    self.zoom_count = settings.get("zoom_count", 3)
+                    self.zoom_count = settings.get("zoom_count", 1)
                     
                     # 読込後の状態をUIに反映
                     self.zoom_unit_combo.blockSignals(True)
@@ -773,11 +773,11 @@ class GanttApp(QMainWindow):
                     self.update_display_days()
                 else:
                     self.tasks = loaded_data
-                    self.min_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=14)
+                    self.min_date = datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
                     self.display_unit = 1
                     self.display_count = 6
                     self.zoom_unit = 1
-                    self.zoom_count = 3
+                    self.zoom_count = 1
                     self.calculate_day_width()
                     self.update_display_days()
                     
