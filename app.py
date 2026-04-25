@@ -79,21 +79,42 @@ class GanttBarItem(QGraphicsRectItem):
         end_d = p_dict.get('end_date', '')
         self.setToolTip(f"タスク: {self.task.get('name','')}\n期間: {start_d}〜{end_d}")
 
+    def hoverMoveEvent(self, event):
+        x = event.pos().x()
+        if x < 10 or x > self.rect().width() - 10:
+            self.setCursor(Qt.SizeHorCursor)
+        else:
+            self.setCursor(Qt.OpenHandCursor)
+        super().hoverMoveEvent(event)
+
+    def hoverLeaveEvent(self, event):
+        self.setCursor(Qt.ArrowCursor)
+        super().hoverLeaveEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            x = event.pos().x()
+            if x < 10:
+                self.resizing_left = True
+            elif x > self.rect().width() - 10:
+                self.resizing_right = True
+            else:
+                self.setCursor(Qt.ClosedHandCursor)
+        super().mousePressEvent(event)
+
     def mouseMoveEvent(self, event):
         snap = self.app.day_width * 0.25
         if self.resizing_left:
-            diff = event.pos().x() - event.lastPos().x()
+            diff = event.scenePos().x() - event.lastScenePos().x()
             nr = self.rect()
-            nr.setLeft(nr.left() + diff)
-            if nr.width() > snap:
-                self.setRect(nr)
+            if nr.width() - diff >= snap:
                 self.setPos(self.pos().x() + diff, self.pos().y())
+                self.setRect(0, 0, nr.width() - diff, nr.height())
         elif self.resizing_right:
-            diff = event.pos().x() - event.lastPos().x()
+            diff = event.scenePos().x() - event.lastScenePos().x()
             nr = self.rect()
-            nr.setRight(nr.right() + diff)
-            if nr.width() > snap:
-                self.setRect(nr)
+            if nr.width() + diff >= snap:
+                self.setRect(0, 0, nr.width() + diff, nr.height())
         else:
             ly = self.pos().y()
             super().mouseMoveEvent(event)
@@ -102,8 +123,9 @@ class GanttBarItem(QGraphicsRectItem):
 
     def mouseReleaseEvent(self, event):
         self.resizing_left = self.resizing_right = False
+        self.setCursor(Qt.OpenHandCursor)
         snap = self.app.day_width * 0.25
-        sx = round((self.pos().x() + self.rect().left()) / snap) * snap
+        sx = round(self.pos().x() / snap) * snap
         sw = max(snap, round(self.rect().width() / snap) * snap)
         self.setPos(sx, self.pos().y())
         self.setRect(0, 0, sw, self.rect().height())
@@ -132,6 +154,15 @@ class GanttBarItem(QGraphicsRectItem):
         # Prevent default double click which was old edit open
         super().mouseDoubleClickEvent(event)
 
+    def contextMenuEvent(self, event):
+        menu = QMenu()
+        del_action = menu.addAction("削除")
+        action = menu.exec(event.screenPos())
+        if action == del_action:
+            if self.task in self.app.tasks:
+                self.app.tasks.remove(self.task)
+                self.app.update_ui()
+
 class ChartScene(QGraphicsScene):
     def __init__(self, app):
         super().__init__()
@@ -152,6 +183,53 @@ class ChartScene(QGraphicsScene):
                     self.app.create_task_from_drag(self.start_x, e.scenePos().x(), e.scenePos().y())
             self.start_x = 0
         super().mouseReleaseEvent(e)
+
+    def contextMenuEvent(self, e):
+        # 背景（アイテムがない場所）を右クリックした場合のみメニューを表示
+        item = self.itemAt(e.scenePos(), self.app.chart_view.transform())
+        # 背景アイテム（土日の矩形やグリッド線など）は「アイテムなし」として扱う
+        if item and not isinstance(item, GanttBarItem):
+            item = None
+            
+        if not item:
+            y = e.scenePos().y()
+            row = int(y / self.app.row_height)
+            menu = QMenu()
+            
+            if 0 <= row < len(self.app.tasks):
+                task = self.app.tasks[row]
+                task_name = task.get('name', '無題')
+                add_period_action = menu.addAction(f"「{task_name}」に期間を追加")
+                add_new_task_action = menu.addAction("ここに新しいタスクを挿入")
+            else:
+                add_period_action = None
+                add_new_task_action = menu.addAction("新規タスクの追加")
+            
+            action = menu.exec(e.screenPos())
+            x = e.scenePos().x()
+            # クリックした日の日付を取得（1日間とする）
+            day_idx = int(x / self.app.day_width)
+            d_str = (self.app.min_date + timedelta(days=day_idx)).strftime("%Y-%m-%d")
+            
+            if action == add_period_action:
+                if 'periods' not in task:
+                    task['periods'] = [{'start_date': task.get('start_date', ''), 'end_date': task.get('end_date', '')}]
+                task['periods'].append({"start_date": d_str, "end_date": d_str})
+                self.app.update_ui()
+            elif action == add_new_task_action:
+                t = {
+                    "name": f"新規 {len(self.app.tasks)+1}", 
+                    "periods": [{"start_date": d_str, "end_date": d_str}],
+                    "progress": 0, 
+                    "color": "#0078d4"
+                }
+                if 0 <= row < len(self.app.tasks):
+                    self.app.tasks.insert(row, t)
+                else:
+                    self.app.tasks.append(t)
+                self.app.update_ui()
+        else:
+            super().contextMenuEvent(e)
 
 class GanttApp(QMainWindow):
     def __init__(self):
@@ -255,11 +333,15 @@ class GanttApp(QMainWindow):
         self.update_month_labels_pos()
 
     def update_month_labels_pos(self):
-        view_left = self.hv.mapToScene(0, 0).x()
-        for start_x, end_x, item in self.month_label_items:
-            tw = item.boundingRect().width()
-            new_x = max(start_x + 5, min(view_left + 5, end_x - tw - 5))
-            item.setPos(new_x, item.pos().y())
+        try:
+            view_left = self.hv.mapToScene(0, 0).x()
+            for start_x, end_x, item in self.month_label_items:
+                if item.scene():
+                    tw = item.boundingRect().width()
+                    new_x = max(start_x + 5, min(view_left + 5, end_x - tw - 5))
+                    item.setPos(new_x, item.pos().y())
+        except RuntimeError:
+            pass
 
     def change_zoom(self, v):
         self.day_width = v
@@ -291,10 +373,9 @@ class GanttApp(QMainWindow):
 
     def add_task(self):
         today = datetime.now()
-        next_week = today + timedelta(days=7)
         t = {
             "name": f"新規タスク {len(self.tasks)+1}",
-            "periods": [{"start_date": today.strftime("%Y-%m-%d"), "end_date": next_week.strftime("%Y-%m-%d")}],
+            "periods": [{"start_date": today.strftime("%Y-%m-%d"), "end_date": today.strftime("%Y-%m-%d")}],
             "progress": 0,
             "color": "#0078d4"
         }
@@ -425,9 +506,9 @@ class GanttApp(QMainWindow):
                 self.update_ui()
 
     def draw_chart(self):
+        self.month_label_items = []
         self.hs.clear()
         self.cs.clear()
-        self.month_label_items = []
         tw_total = 150 * self.day_width
         ch = max(self.chart_view.height(), (len(self.tasks) + 10) * self.row_height)
         
@@ -441,11 +522,16 @@ class GanttApp(QMainWindow):
                 bg = QColor(240, 248, 255) if d.weekday()==5 else QColor(255, 240, 240)
                 re = self.cs.addRect(x, 0, self.day_width, ch, QPen(Qt.NoPen), QBrush(bg))
                 re.setZValue(-20)
+                re.setAcceptedMouseButtons(Qt.NoButton)
             
             # グリッド
-            self.cs.addLine(x, 0, x, ch, QPen(QColor(220, 220, 220), 1)).setZValue(-15)
+            gl = self.cs.addLine(x, 0, x, ch, QPen(QColor(220, 220, 220), 1))
+            gl.setZValue(-15)
+            gl.setAcceptedMouseButtons(Qt.NoButton)
             for h in [6, 12, 18]:
-                self.cs.addLine(x + (self.day_width * h / 24.0), 0, x + (self.day_width * h / 24.0), ch, QPen(QColor(245, 245, 245), 0.5)).setZValue(-15)
+                sl = self.cs.addLine(x + (self.day_width * h / 24.0), 0, x + (self.day_width * h / 24.0), ch, QPen(QColor(245, 245, 245), 0.5))
+                sl.setZValue(-15)
+                sl.setAcceptedMouseButtons(Qt.NoButton)
             
             # ヘッダー (日付・曜日)
             self.hs.addRect(x, 35, self.day_width, 35, QPen(QColor(200, 200, 200)), QBrush(QColor(245, 245, 245))).setZValue(5)
@@ -536,5 +622,5 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     window = GanttApp()
-    window.show()
+    window.showMaximized()
     sys.exit(app.exec())
