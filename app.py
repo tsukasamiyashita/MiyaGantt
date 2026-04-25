@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                QHeaderView, QSplitter, QGraphicsView, QGraphicsScene, 
                                QDialog, QFormLayout, QLineEdit, QDateEdit, QMessageBox, 
                                QFileDialog, QGraphicsRectItem, QGraphicsTextItem, QSlider, QLabel, QMenu, QSpinBox, QColorDialog, QComboBox)
-from PySide6.QtCore import Qt, QDate, QRectF, QPointF
+from PySide6.QtCore import Qt, QDate, QRectF, QPointF, QTimer
 from PySide6.QtGui import QBrush, QPen, QColor, QFont, QPainter
 
 # TaskDialog was removed in favor of inline editing.
@@ -59,6 +59,7 @@ class GanttBarItem(QGraphicsRectItem):
         
         self.resizing_left = False
         self.resizing_right = False
+        self.dragging_with_shift = False
         self.update_appearance()
 
     def update_appearance(self):
@@ -101,7 +102,14 @@ class GanttBarItem(QGraphicsRectItem):
         self.progress_item.setBrush(QBrush(bc))
         self.progress_item.setPen(Qt.NoPen)
         self.text_item.setPos(5, (self.rect().height() - self.text_item.boundingRect().height()) / 2)
-        p_dict = self.task.get('periods', [self.task])[self.period_index] if 'periods' in self.task else self.task
+        
+        # ツールチップ更新用のデータ取得
+        periods = self.task.get('periods')
+        if periods is not None and self.period_index < len(periods):
+            p_dict = periods[self.period_index]
+        else:
+            p_dict = self.task
+
         start_d = p_dict.get('start_date', '')
         end_d = p_dict.get('end_date', '')
         self.setToolTip(f"タスク: {self.task.get('name','')}\n期間: {start_d}〜{end_d}")
@@ -127,6 +135,7 @@ class GanttBarItem(QGraphicsRectItem):
                 self.resizing_right = True
             else:
                 self.setCursor(Qt.ClosedHandCursor)
+                self.dragging_with_shift = bool(event.modifiers() & Qt.ShiftModifier)
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
@@ -145,7 +154,14 @@ class GanttBarItem(QGraphicsRectItem):
         else:
             ly = self.pos().y()
             super().mouseMoveEvent(event)
-            self.setPos(self.pos().x(), ly)
+            if not self.dragging_with_shift:
+                self.setPos(self.pos().x(), ly)
+            else:
+                # 縦移動時はマウスカーソルの位置に基づいて行の中心にスナップ
+                row = int(event.scenePos().y() / self.app.row_height)
+                # タスクが存在する行の範囲内に制限
+                row = max(0, min(len(self.app.tasks) - 1, row)) if self.app.tasks else 0
+                self.setPos(self.pos().x(), row * self.app.row_height + 10)
         self.update_appearance()
 
     def mouseReleaseEvent(self, event):
@@ -154,12 +170,45 @@ class GanttBarItem(QGraphicsRectItem):
         snap = self.app.day_width * 0.25
         sx = round(self.pos().x() / snap) * snap
         sw = max(snap, round(self.rect().width() / snap) * snap)
+        
+        sd = self.app.min_date + timedelta(days=sx / self.app.day_width)
+        ed = sd + timedelta(days=sw / self.app.day_width - 0.001)
+
+        if self.dragging_with_shift:
+            self.dragging_with_shift = False
+            new_row = int(event.scenePos().y() / self.app.row_height)
+            new_row = max(0, min(len(self.app.tasks) - 1, new_row)) if self.app.tasks else 0
+            
+            if new_row != self.row:
+                # 移動元・移動先の両方で 'periods' 形式を確定させる
+                for t in [self.task, self.app.tasks[new_row]]:
+                    if 'periods' not in t:
+                        t['periods'] = [{'start_date': t.get('start_date', ''), 'end_date': t.get('end_date', '')}]
+                
+                if 0 <= self.period_index < len(self.task['periods']):
+                    # 期間データを移動
+                    p = self.task['periods'].pop(self.period_index)
+                    p['start_date'] = sd.strftime("%Y-%m-%d")
+                    p['end_date'] = ed.strftime("%Y-%m-%d")
+                    
+                    target_task = self.app.tasks[new_row]
+                    target_task['periods'].append(p)
+                    
+                    # 互換性のためメインの日付フィールドも更新
+                    for t in [self.task, target_task]:
+                        if t['periods']:
+                            t['start_date'] = t['periods'][0]['start_date']
+                            t['end_date'] = t['periods'][0]['end_date']
+                    
+                    QTimer.singleShot(0, self.app.update_ui)
+                
+                super().mouseReleaseEvent(event)
+                return
+
         self.setPos(sx, self.pos().y())
         self.setRect(0, 0, sw, self.rect().height())
         super().mouseReleaseEvent(event)
         
-        sd = self.app.min_date + timedelta(days=sx / self.app.day_width)
-        ed = sd + timedelta(days=sw / self.app.day_width - 0.001)
         if 'periods' not in self.task:
             self.task['periods'] = [{'start_date': self.task.get('start_date', ''), 'end_date': self.task.get('end_date', '')}]
             
@@ -188,7 +237,7 @@ class GanttBarItem(QGraphicsRectItem):
         if action == del_action:
             if self.task in self.app.tasks:
                 self.app.tasks.remove(self.task)
-                self.app.update_ui()
+                QTimer.singleShot(0, self.app.update_ui)
 
 class ChartScene(QGraphicsScene):
     def __init__(self, app):
@@ -617,7 +666,7 @@ class GanttApp(QMainWindow):
         self.hs.clear()
         self.cs.clear()
         tw_total = self.display_days * self.day_width
-        ch = max(self.chart_view.height(), (len(self.tasks) + 10) * self.row_height)
+        ch = max(self.chart_view.height(), len(self.tasks) * self.row_height)
         
         last_m = None
         for i in range(self.display_days):
@@ -675,8 +724,8 @@ class GanttApp(QMainWindow):
         if self.month_label_items:
             self.month_label_items[-1][1] = tw_total
 
-        # 横線
-        for r in range(len(self.tasks) + 10):
+        # 横線 (タスクがある行のみ表示)
+        for r in range(len(self.tasks) + 1):
             y = r * self.row_height
             self.cs.addLine(0, y, tw_total, y, QPen(QColor(220, 220, 220), 1)).setZValue(-15)
         
@@ -689,9 +738,16 @@ class GanttApp(QMainWindow):
             
         for row, t in enumerate(self.tasks):
             try:
-                periods = t.get('periods', [])
-                if not periods and 'start_date' in t:
-                    periods = [{'start_date': t['start_date'], 'end_date': t['end_date']}]
+                periods = t.get('periods')
+                if periods is None:
+                    # 互換性維持: periodsが無ければ単一の日付を使用
+                    if t.get('start_date') and t.get('end_date'):
+                        periods = [{'start_date': t['start_date'], 'end_date': t['end_date']}]
+                    else:
+                        continue
+                
+                if not periods:
+                    continue
                     
                 for p_idx, p in enumerate(periods):
                     if not p.get('start_date') or not p.get('end_date'): continue
