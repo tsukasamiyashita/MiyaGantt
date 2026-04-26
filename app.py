@@ -284,6 +284,7 @@ class GanttBarItem(QGraphicsRectItem):
                     item.update_appearance()
                     
         self.app.sync_table_from_tasks()
+        self.app.update_ui()
 
     def mouseDoubleClickEvent(self, event):
         # Prevent default double click which was old edit open
@@ -499,10 +500,11 @@ class GanttApp(QMainWindow):
         self.splitter = QSplitter(Qt.Horizontal)
         ml.addWidget(self.splitter)
         
-        self.table = TaskTable(0, 6)
-        self.table.setHorizontalHeaderLabels(["", "", "タスク名", "進捗(%)", "期間指定", "色"])
+        self.table = TaskTable(0, 7)
+        self.table.setHorizontalHeaderLabels(["", "", "タスク名", "進捗(%)", "期間指定", "色", "合計日数"])
         self.table.setColumnWidth(0, 20)
         self.table.setColumnWidth(1, 30)
+        self.table.setColumnWidth(6, 70)
         self.table.horizontalHeader().setFixedHeight(self.header_height)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
         self.table.verticalHeader().setDefaultSectionSize(self.row_height)
@@ -870,6 +872,29 @@ class GanttApp(QMainWindow):
             period_item = self.table.item(r, 4)
             if period_item:
                 period_item.setText(", ".join(p_strs))
+            
+            # 合計日数の更新
+            total_days = 0
+            if t.get('is_group'):
+                # グループ内の全タスクの合計日数を集計
+                for i in range(info['index'] + 1, len(self.tasks)):
+                    sub_t = self.tasks[i]
+                    if sub_t.get('is_group'): break
+                    for p in sub_t.get('periods', []):
+                        if p.get('start_date') and p.get('end_date'):
+                            psd = datetime.strptime(p['start_date'], "%Y-%m-%d")
+                            ped = datetime.strptime(p['end_date'], "%Y-%m-%d")
+                            total_days += (ped - psd).days + 1
+            else:
+                for p in t.get('periods', []):
+                    if p.get('start_date') and p.get('end_date'):
+                        psd = datetime.strptime(p['start_date'], "%Y-%m-%d")
+                        ped = datetime.strptime(p['end_date'], "%Y-%m-%d")
+                        total_days += (ped - psd).days + 1
+            
+            days_item = self.table.item(r, 6)
+            if days_item:
+                days_item.setText(f"{total_days}日")
         self.table.blockSignals(False)
 
     def create_task_from_drag(self, x1, x2, y):
@@ -908,7 +933,7 @@ class GanttApp(QMainWindow):
             is_group = t.get('is_group', False)
             
             # セルが存在しない場合のみ生成する
-            for c in range(6):
+            for c in range(7):
                 if self.table.item(r, c) is None:
                     self.table.setItem(r, c, QTableWidgetItem())
             
@@ -962,6 +987,13 @@ class GanttApp(QMainWindow):
             item_color.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
             item_color.setForeground(QColor(51, 51, 51))
             item_color.setBackground(QColor(255, 255, 255))
+            
+            # 6: Total Days
+            item_days = self.table.item(r, 6)
+            item_days.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+            item_days.setForeground(QColor(51, 51, 51))
+            item_days.setTextAlignment(Qt.AlignCenter)
+            item_days.setBackground(QColor(255, 255, 255))
 
             if is_group:
                 item_prog.setText("")
@@ -971,14 +1003,31 @@ class GanttApp(QMainWindow):
                 item_color.setText("")
                 item_color.setBackground(QColor(200, 200, 200))
                 item_color.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+                item_days.setBackground(QColor(242, 242, 242))
+                
+                # 合計日数の計算
+                total_days = 0
+                for i in range(info['index'] + 1, len(self.tasks)):
+                    sub_t = self.tasks[i]
+                    if sub_t.get('is_group'): break
+                    for p in sub_t.get('periods', []):
+                        if p.get('start_date') and p.get('end_date'):
+                            psd = datetime.strptime(p['start_date'], "%Y-%m-%d")
+                            ped = datetime.strptime(p['end_date'], "%Y-%m-%d")
+                            total_days += (ped - psd).days + 1
+                item_days.setText(f"{total_days}日")
             else:
                 item_prog.setText(str(t.get('progress', 0)))
                 item_prog.setTextAlignment(Qt.AlignCenter)
                 
                 periods = t.get('periods', [])
                 p_strs = []
+                total_days = 0
                 for p in periods:
                     if not p.get('start_date') or not p.get('end_date'): continue
+                    psd = datetime.strptime(p['start_date'], "%Y-%m-%d")
+                    ped = datetime.strptime(p['end_date'], "%Y-%m-%d")
+                    total_days += (ped - psd).days + 1
                     s = p['start_date'].replace('-', '/')
                     e = p['end_date'].replace('-', '/')
                     p_strs.append(f"{s}-{e}")
@@ -987,6 +1036,8 @@ class GanttApp(QMainWindow):
                 item_color.setText("")
                 item_color.setBackground(QColor(t.get('color', '#0078d4')))
                 item_color.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+                
+                item_days.setText(f"{total_days}日")
                 
         # 余分な行を削除
         if self.table.rowCount() > new_rows:
@@ -1171,6 +1222,39 @@ class GanttApp(QMainWindow):
             t = info['task']
             try:
                 if t.get('is_group'):
+                    # グループ内のタスクのバーの数を集計
+                    counts = [0] * self.display_days
+                    for i in range(info['index'] + 1, len(self.tasks)):
+                        sub_t = self.tasks[i]
+                        if sub_t.get('is_group'): break
+                        sub_periods = sub_t.get('periods', [])
+                        for p in sub_periods:
+                            if not p.get('start_date') or not p.get('end_date'): continue
+                            psd = datetime.strptime(p['start_date'], "%Y-%m-%d")
+                            ped = datetime.strptime(p['end_date'], "%Y-%m-%d")
+                            # 表示範囲内での重なりを計算
+                            s_idx = max(0, (psd - self.min_date).days)
+                            e_idx = min(self.display_days - 1, (ped - self.min_date).days)
+                            for d_idx in range(s_idx, e_idx + 1):
+                                counts[d_idx] += 1
+                    
+                    # 集計結果を描画
+                    for d_idx, count in enumerate(counts):
+                        if count > 0:
+                            x = d_idx * self.day_width
+                            # 背景に薄い円を表示
+                            r = min(self.day_width * 0.8, self.row_height * 0.6)
+                            self.cs.addEllipse(x + (self.day_width - r)/2, row * self.row_height + (self.row_height - r)/2, r, r, 
+                                               QPen(Qt.NoPen), QBrush(QColor(0, 120, 212, 40))).setZValue(15)
+                            
+                            # 数字を表示
+                            txt = self.cs.addText(str(count))
+                            txt.setFont(QFont("Segoe UI", 9, QFont.Bold))
+                            txt.setDefaultTextColor(QColor(0, 120, 212))
+                            tw = txt.boundingRect().width()
+                            th = txt.boundingRect().height()
+                            txt.setPos(x + (self.day_width - tw)/2, row * self.row_height + (self.row_height - th)/2)
+                            txt.setZValue(20)
                     continue
 
                 periods = t.get('periods')
