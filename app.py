@@ -582,11 +582,15 @@ class GanttApp(QMainWindow):
 
         self.table = TaskTable(0, 7)
         self.table.setHorizontalHeaderLabels(["", "", "タスク名", "進捗(%)", "期間指定", "色", "合計日数"])
-        self.table.setColumnWidth(0, 20)
-        self.table.setColumnWidth(1, 30)
-        self.table.setColumnWidth(6, 70)
+        self.table.setColumnWidth(0, 25)   # マーク
+        self.table.setColumnWidth(1, 35)   # 開閉
+        self.table.setColumnWidth(3, 60)   # 進捗(%)
+        self.table.setColumnWidth(4, 165)  # 期間指定
+        self.table.setColumnWidth(5, 40)   # 色
+        self.table.setColumnWidth(6, 90)   # 合計日数
+        self.table.setColumnWidth(2, 200)  # タスク名 (初期幅)
         self.table.horizontalHeader().setFixedHeight(self.header_height)
-        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Interactive)
         self.table.verticalHeader().setDefaultSectionSize(self.row_height)
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
@@ -626,7 +630,7 @@ class GanttApp(QMainWindow):
         rcl.addWidget(self.hv)
         rcl.addWidget(self.chart_view)
         self.splitter.addWidget(rc)
-        self.splitter.setSizes([380, 1000])
+        self.splitter.setSizes([450, 930])
         
         self.chart_view.horizontalScrollBar().valueChanged.connect(self.on_horizontal_scroll)
         self.table.verticalScrollBar().valueChanged.connect(self.chart_view.verticalScrollBar().setValue)
