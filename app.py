@@ -716,15 +716,18 @@ class GanttApp(QMainWindow):
         self.btn_save = QPushButton("保存")
         self.btn_settings = QPushButton("⚙ 編集期間")
         self.btn_summary = QPushButton("📊 集計")
+        self.btn_today = QPushButton("📅 今日")
         self.btn_load.clicked.connect(self.load_data)
         self.btn_save.clicked.connect(self.save_data)
         self.btn_settings.clicked.connect(self.open_settings)
         self.btn_summary.clicked.connect(self.open_summary)
+        self.btn_today.clicked.connect(self.scroll_to_today)
         
         tl.addWidget(self.btn_load)
         tl.addWidget(self.btn_save)
         tl.addWidget(self.btn_settings)
         tl.addWidget(self.btn_summary)
+        tl.addWidget(self.btn_today)
         tl.addStretch()
         
         ml.addLayout(tl)
@@ -1533,6 +1536,20 @@ class GanttApp(QMainWindow):
                 t['color'] = dlg.selected_color
                 self.update_ui()
 
+
+    def scroll_to_today(self):
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        target_date = today
+        
+        if self.display_unit == 0: # 週間
+            target_date = today - timedelta(days=today.weekday())
+        elif self.display_unit == 1: # 月間
+            target_date = today.replace(day=1)
+        elif self.display_unit == 2: # 年間
+            target_date = today.replace(month=1, day=1)
+            
+        v = (target_date - self.min_date).days * self.day_width
+        self.chart_view.horizontalScrollBar().setValue(int(v))
 
     def open_settings(self):
         dlg = SettingsDialog(self)
