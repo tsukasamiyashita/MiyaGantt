@@ -272,47 +272,6 @@ class GanttBarItem(QGraphicsRectItem):
                 self.app.tasks.remove(self.task)
                 QTimer.singleShot(0, self.app.update_ui)
 
-class GanttGroupItem(QGraphicsRectItem):
-    def __init__(self, task, row, start_date, end_date, gantt_app):
-        super().__init__()
-        self.task = task
-        self.row = row
-        self.app = gantt_app
-        self.start_date = start_date
-        self.end_date = end_date
-        self.setZValue(25)
-        self.update_appearance()
-
-    def update_appearance(self):
-        try:
-            sd = datetime.strptime(self.start_date, "%Y-%m-%d")
-            ed = datetime.strptime(self.end_date, "%Y-%m-%d")
-            x = (sd - self.app.min_date).days * self.app.day_width
-            w = ((ed - sd).days + 1) * self.app.day_width
-            y = self.row * self.app.row_height + 12
-            h = 10
-            
-            # ブラケット形状のパスを作成
-            path = QPainterPath()
-            path.moveTo(x, y + h)
-            path.lineTo(x, y)
-            path.lineTo(x + w, y)
-            path.lineTo(x + w, y + h)
-            path.lineTo(x + w - 5, y + h - 5)
-            path.lineTo(x + w - 5, y + 5)
-            path.lineTo(x + 5, y + 5)
-            path.lineTo(x + 5, y + h - 5)
-            path.closeSubpath()
-            
-            # 簡易的に矩形で表現（パスが複雑な場合はこちら）
-            self.setRect(x, y, w, h)
-            self.setBrush(QBrush(QColor(60, 60, 60)))
-            self.setPen(QPen(Qt.black, 1))
-            
-            self.setToolTip(f"グループ: {self.task.get('name','')}\n期間: {self.start_date}〜{self.end_date}")
-        except:
-            pass
-
 class ChartScene(QGraphicsScene):
     def __init__(self, app):
         super().__init__()
@@ -336,7 +295,7 @@ class ChartScene(QGraphicsScene):
 
     def mouseDoubleClickEvent(self, e):
         items = self.items(e.scenePos(), Qt.IntersectsItemShape, Qt.DescendingOrder, self.app.chart_view.transform())
-        gantt_item = next((it for it in items if isinstance(it, (GanttBarItem, GanttGroupItem))), None)
+        gantt_item = next((it for it in items if isinstance(it, GanttBarItem)), None)
             
         if not gantt_item and e.button() == Qt.LeftButton:
             y = e.scenePos().y()
@@ -345,9 +304,6 @@ class ChartScene(QGraphicsScene):
                 info = self.app.visible_tasks_info[row]
                 task = info['task']
                 if task.get('is_group'):
-                    # グループの場合は折り畳み
-                    task['collapsed'] = not task.get('collapsed', False)
-                    self.app.update_ui()
                     return
 
                 x = e.scenePos().x()
@@ -413,8 +369,9 @@ class ChartScene(QGraphicsScene):
 class TaskTable(QTableWidget):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.setSelectionMode(QTableWidget.SingleSelection)
+        self.setSelectionMode(QTableWidget.NoSelection)
         self.setSelectionBehavior(QTableWidget.SelectRows)
+        self.setFocusPolicy(Qt.NoFocus)
 
 class GanttApp(QMainWindow):
     def __init__(self):
@@ -441,7 +398,8 @@ class GanttApp(QMainWindow):
         self.setStyleSheet("""
             QMainWindow { background-color: #f0f0f0; }
             QWidget { background-color: #f0f0f0; color: #333333; }
-            QTableWidget { background-color: #ffffff; gridline-color: #e0e0e0; border: 1px solid #cccccc; color: #333333; }
+            QTableWidget { background-color: #ffffff; gridline-color: #e0e0e0; border: 1px solid #cccccc; color: #333333; outline: 0; }
+            QTableWidget::item:selected { background-color: transparent; color: #333333; }
             QHeaderView::section { background-color: #e8e8e8; color: #333333; border: 1px solid #cccccc; padding: 4px; font-weight: bold; }
             QPushButton { background-color: #ffffff; border: 1px solid #cccccc; padding: 6px 12px; border-radius: 4px; }
             QPushButton:hover { background-color: #e8e8e8; }
@@ -786,7 +744,6 @@ class GanttApp(QMainWindow):
         }
         self.tasks.append(t)
         self.update_ui()
-        self.table.editItem(self.table.item(len(self.visible_tasks_info)-1, 1))
 
     def add_group(self):
         g = {
@@ -797,7 +754,6 @@ class GanttApp(QMainWindow):
         }
         self.tasks.append(g)
         self.update_ui()
-        self.table.editItem(self.table.item(len(self.visible_tasks_info)-1, 1))
 
     def delete_task(self):
         r = self.table.currentRow()
@@ -821,19 +777,6 @@ class GanttApp(QMainWindow):
                     visible.append({'index': i, 'task': t, 'indent': 1 if has_group else 0})
         return visible
 
-    def get_group_range(self, group_index):
-        start_dates = []
-        end_dates = []
-        for i in range(group_index + 1, len(self.tasks)):
-            t = self.tasks[i]
-            if t.get('is_group'):
-                break
-            s, e = self.get_task_dates(t)
-            if s: start_dates.append(s)
-            if e: end_dates.append(e)
-        if start_dates and end_dates:
-            return min(start_dates), max(end_dates)
-        return None, None
 
     def get_task_dates(self, task):
         s_dates = []
@@ -1125,10 +1068,6 @@ class GanttApp(QMainWindow):
             t = info['task']
             try:
                 if t.get('is_group'):
-                    gs, ge = self.get_group_range(info['index'])
-                    if gs and ge:
-                        group_item = GanttGroupItem(t, row, gs, ge, self)
-                        self.cs.addItem(group_item)
                     continue
 
                 periods = t.get('periods')
