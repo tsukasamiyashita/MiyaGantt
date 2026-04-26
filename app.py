@@ -700,6 +700,11 @@ class GanttApp(QMainWindow):
         
         self.setWindowIcon(QIcon(self.get_icon_path()))
         
+        # スナップ用タイマーの初期化
+        self.snap_timer = QTimer()
+        self.snap_timer.setSingleShot(True)
+        self.snap_timer.timeout.connect(self.snap_horizontal_scroll)
+        
         self.init_ui()
         self.apply_styles()
 
@@ -755,14 +760,12 @@ class GanttApp(QMainWindow):
         self.btn_save = QPushButton("保存")
         self.btn_settings = QPushButton("⚙ 編集期間")
         self.btn_summary = QPushButton("📊 集計")
-        self.btn_today = QPushButton("📅 今日")
         self.btn_save_config = QPushButton("💾 設定保存")
         self.btn_help = QPushButton("❓ ヘルプ")
         self.btn_load.clicked.connect(self.load_data)
         self.btn_save.clicked.connect(self.save_data)
         self.btn_settings.clicked.connect(self.open_settings)
         self.btn_summary.clicked.connect(self.open_summary)
-        self.btn_today.clicked.connect(self.scroll_to_today)
         self.btn_save_config.clicked.connect(self.save_app_config)
         self.btn_help.clicked.connect(self.open_help)
         
@@ -770,12 +773,46 @@ class GanttApp(QMainWindow):
         tl.addWidget(self.btn_save)
         tl.addWidget(self.btn_settings)
         tl.addWidget(self.btn_summary)
-        tl.addWidget(self.btn_today)
         tl.addWidget(self.btn_save_config)
         tl.addWidget(self.btn_help)
         tl.addStretch()
         
         ml.addLayout(tl)
+        
+        # 移動ナビゲーション用の2段目ツールバー
+        tl2 = QHBoxLayout()
+        tl2.addWidget(QLabel("カレンダー移動:"))
+        
+        self.btn_prev_y = QPushButton("≪年")
+        self.btn_prev_m = QPushButton("＜月")
+        self.btn_prev_w = QPushButton("＜週")
+        self.btn_prev_d = QPushButton("＜日")
+        self.btn_today = QPushButton("📅 今日")
+        self.btn_next_d = QPushButton("日＞")
+        self.btn_next_w = QPushButton("週＞")
+        self.btn_next_m = QPushButton("月＞")
+        self.btn_next_y = QPushButton("年≫")
+        
+        self.btn_prev_y.clicked.connect(lambda: self.scroll_by_unit('year', -1))
+        self.btn_prev_m.clicked.connect(lambda: self.scroll_by_unit('month', -1))
+        self.btn_prev_w.clicked.connect(lambda: self.scroll_by_unit('week', -1))
+        self.btn_prev_d.clicked.connect(lambda: self.scroll_by_unit('day', -1))
+        self.btn_today.clicked.connect(self.scroll_to_today)
+        self.btn_next_d.clicked.connect(lambda: self.scroll_by_unit('day', 1))
+        self.btn_next_w.clicked.connect(lambda: self.scroll_by_unit('week', 1))
+        self.btn_next_m.clicked.connect(lambda: self.scroll_by_unit('month', 1))
+        self.btn_next_y.clicked.connect(lambda: self.scroll_by_unit('year', 1))
+        
+        nav_btns = [self.btn_prev_y, self.btn_prev_m, self.btn_prev_w, self.btn_prev_d, 
+                    self.btn_today, self.btn_next_d, self.btn_next_w, self.btn_next_m, self.btn_next_y]
+        
+        for b in nav_btns:
+            if b != self.btn_today:
+                b.setFixedWidth(45)
+            tl2.addWidget(b)
+            
+        tl2.addStretch()
+        ml.addLayout(tl2)
         
         self.splitter = QSplitter(Qt.Horizontal)
         ml.addWidget(self.splitter)
@@ -865,12 +902,19 @@ class GanttApp(QMainWindow):
         self.load_app_config()
         
         self.chart_view.horizontalScrollBar().valueChanged.connect(self.on_horizontal_scroll)
+        self.chart_view.horizontalScrollBar().sliderReleased.connect(self.snap_horizontal_scroll)
         self.table.verticalScrollBar().valueChanged.connect(self.chart_view.verticalScrollBar().setValue)
         self.chart_view.verticalScrollBar().valueChanged.connect(self.table.verticalScrollBar().setValue)
 
     def on_horizontal_scroll(self, v):
+        # スクロール中は同期のみ行い、滑らかに移動させる
         self.hv.horizontalScrollBar().setValue(v)
         self.update_month_labels_pos()
+        
+        # スクロール停止後にスナップさせるためタイマーを開始
+        # スライダー操作中以外（ホイール等）の場合に有効
+        if not self.chart_view.horizontalScrollBar().isSliderDown():
+            self.snap_timer.start(300) # 300ms後にスナップ実行
         
         # スクロール位置に応じた集計列の同期
         if self.day_width <= 0: return
@@ -889,6 +933,12 @@ class GanttApp(QMainWindow):
         if base_key != self.last_summary_base_key:
             self.last_summary_base_key = base_key
             self.sync_summary_to_scroll(threshold_date)
+
+    def snap_horizontal_scroll(self):
+        if self.day_width > 0:
+            v = self.chart_view.horizontalScrollBar().value()
+            snapped = round(v / self.day_width) * self.day_width
+            self.chart_view.horizontalScrollBar().setValue(int(snapped))
 
     def update_month_labels_pos(self):
         try:
@@ -919,6 +969,10 @@ class GanttApp(QMainWindow):
             view_width = 1000
             
         self.day_width = max(1.0, view_width / max(1.0, days))
+        
+        # スクロールステップの更新 (スナップ用)
+        if hasattr(self, 'chart_view'):
+            self.chart_view.horizontalScrollBar().setSingleStep(max(1, int(self.day_width)))
 
     def on_zoom_changed(self, *_):
         self.zoom_unit = self.zoom_unit_combo.currentIndex()
@@ -1597,6 +1651,32 @@ class GanttApp(QMainWindow):
             
         v = (target_date - self.min_date).days * self.day_width
         self.chart_view.horizontalScrollBar().setValue(int(v))
+
+    def scroll_by_unit(self, unit, direction):
+        if self.day_width <= 0: return
+        
+        v = self.chart_view.horizontalScrollBar().value()
+        days_offset = round(v / self.day_width)
+        current_date = self.min_date + timedelta(days=days_offset)
+        
+        if unit == 'day':
+            new_date = current_date + timedelta(days=direction)
+        elif unit == 'week':
+            # 指定方向へ1週間分移動し、その週の月曜日にスナップ
+            target_date = current_date + timedelta(days=direction * 7)
+            new_date = target_date - timedelta(days=target_date.weekday())
+        elif unit == 'month':
+            # 指定方向の月の1日にスナップ
+            m = current_date.month - 1 + direction
+            y = current_date.year + m // 12
+            m = m % 12 + 1
+            new_date = datetime(y, m, 1)
+        elif unit == 'year':
+            # 指定方向の年の1月1日にスナップ
+            new_date = datetime(current_date.year + direction, 1, 1)
+        
+        new_v = (new_date - self.min_date).days * self.day_width
+        self.chart_view.horizontalScrollBar().setValue(int(new_v))
 
     def open_settings(self):
         dlg = SettingsDialog(self)
