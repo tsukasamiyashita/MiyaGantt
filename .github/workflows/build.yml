@@ -32,6 +32,7 @@ jobs:
         --name "MiyaGantt-v1.0.0" 
         --add-data "README.MD;."
         --collect-all PySide6
+        --hidden-import jpholiday
         app.py
 
     - name: Upload Artifact

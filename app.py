@@ -2,6 +2,7 @@ import sys
 import json
 import calendar
 from datetime import datetime, timedelta
+import jpholiday
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QHBoxLayout, QPushButton, QTableWidget, QTableWidgetItem, 
                                QHeaderView, QSplitter, QGraphicsView, QGraphicsScene, 
@@ -1223,9 +1224,10 @@ class GanttApp(QMainWindow):
             d = self.min_date + timedelta(days=i)
             x = i * self.day_width
             
+            is_holiday = jpholiday.is_holiday(d)
             # 背景
-            if d.weekday() >= 5:
-                bg = QColor(240, 248, 255) if d.weekday()==5 else QColor(255, 240, 240)
+            if d.weekday() >= 5 or is_holiday:
+                bg = QColor(240, 248, 255) if d.weekday()==5 and not is_holiday else QColor(255, 240, 240)
                 re = self.cs.addRect(x, 0, self.day_width, ch, QPen(Qt.NoPen), QBrush(bg))
                 re.setZValue(-20)
                 re.setAcceptedMouseButtons(Qt.NoButton)
@@ -1246,17 +1248,28 @@ class GanttApp(QMainWindow):
             
             if self.day_width >= 35:
                 dl = self.hs.addText(d.strftime("%d"))
-                dl.setDefaultTextColor(QColor(50, 50, 50))
+                dl.setDefaultTextColor(QColor(220, 0, 0) if is_holiday else QColor(50, 50, 50))
                 dl.setFont(QFont("Segoe UI", 9, QFont.Bold))
                 dl.setPos(x + (self.day_width/2) - 10, 35)
                 dl.setZValue(10)
                 
-                w_c = QColor(0, 80, 200) if d.weekday()==5 else QColor(220, 0, 0) if d.weekday()==6 else QColor(60, 60, 60)
+                w_c = QColor(0, 80, 200) if d.weekday()==5 and not is_holiday else QColor(220, 0, 0) if d.weekday()==6 or is_holiday else QColor(60, 60, 60)
                 yl = self.hs.addText(["月","火","水","木","金","土","日"][d.weekday()])
                 yl.setDefaultTextColor(w_c)
                 yl.setFont(QFont("Segoe UI", 7))
                 yl.setPos(x + (self.day_width/2) - 8, 52)
                 yl.setZValue(10)
+                
+                if is_holiday:
+                    h_name = jpholiday.is_holiday_name(d)
+                    if h_name:
+                        dl.setToolTip(h_name)
+                        yl.setToolTip(h_name)
+                        
+                        # ヘッダー背景にもツールチップを設定して、どこをホバーしても祝日名が出るようにする
+                        header_bg = self.hs.addRect(x, 35, self.day_width, 35, QPen(Qt.NoPen), QBrush(Qt.transparent))
+                        header_bg.setZValue(11)
+                        header_bg.setToolTip(h_name)
             
             # 年月ラベル (Sticky)
             if (cm := d.strftime("%Y/%m")) != last_m:
