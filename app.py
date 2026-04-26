@@ -1587,7 +1587,9 @@ class GanttApp(QMainWindow):
             x = i * self.day_width
             d_str = d.strftime("%Y-%m-%d")
             
-            is_holiday = jpholiday.is_holiday(d) or d_str in self.custom_holidays
+            is_custom = d_str in self.custom_holidays
+            is_public = jpholiday.is_holiday(d)
+            is_holiday = is_public or is_custom
             # 背景
             if d.weekday() >= 5 or is_holiday:
                 bg = QColor(240, 248, 255) if d.weekday()==5 and not is_holiday else QColor(255, 240, 240)
@@ -1607,16 +1609,32 @@ class GanttApp(QMainWindow):
                     sl.setAcceptedMouseButtons(Qt.NoButton)
             
             # ヘッダー (日付・曜日)
-            self.hs.addRect(x, 35, self.day_width, 35, QPen(QColor(210, 210, 210)), QBrush(QColor(248, 248, 248))).setZValue(5)
+            h_bg = QColor(255, 255, 225) if is_custom else QColor(248, 248, 248)
+            self.hs.addRect(x, 35, self.day_width, 35, QPen(QColor(210, 210, 210)), QBrush(h_bg)).setZValue(5)
             
             if self.day_width >= 35:
                 dl = self.hs.addText(d.strftime("%d"))
-                dl.setDefaultTextColor(QColor(220, 0, 0) if is_holiday else QColor(50, 50, 50))
+                # カスタム祝日はディープピンク、公的祝日は黒、平日は黒
+                if is_custom:
+                    day_color = QColor(255, 20, 147)
+                else:
+                    day_color = QColor(50, 50, 50)
+                
+                dl.setDefaultTextColor(day_color)
                 dl.setFont(QFont("Segoe UI", 9, QFont.Bold))
                 dl.setPos(x + (self.day_width/2) - 10, 35)
                 dl.setZValue(10)
                 
-                w_c = QColor(0, 80, 200) if d.weekday()==5 and not is_holiday else QColor(220, 0, 0) if d.weekday()==6 or is_holiday else QColor(60, 60, 60)
+                # 曜日の色
+                if is_custom:
+                    w_c = QColor(255, 20, 147)
+                elif d.weekday() == 5 and not is_public: # 土曜日
+                    w_c = QColor(0, 80, 200)
+                elif d.weekday() == 6 or is_public: # 日曜または公的祝日
+                    w_c = QColor(220, 0, 0)
+                else:
+                    w_c = QColor(60, 60, 60)
+                
                 yl = self.hs.addText(["月","火","水","木","金","土","日"][d.weekday()])
                 yl.setDefaultTextColor(w_c)
                 yl.setFont(QFont("Segoe UI", 7))
@@ -1838,7 +1856,8 @@ class GanttApp(QMainWindow):
             "display_unit": self.display_unit,
             "display_count": self.display_count,
             "summary_visible": self.summary_visible,
-            "column_visibility": column_visibility
+            "column_visibility": column_visibility,
+            "custom_holidays": self.custom_holidays
         }
         
         try:
@@ -1862,6 +1881,7 @@ class GanttApp(QMainWindow):
             self.display_unit = config.get("display_unit", self.display_unit)
             self.display_count = config.get("display_count", self.display_count)
             self.summary_visible = config.get("summary_visible", self.summary_visible)
+            self.custom_holidays = config.get("custom_holidays", self.custom_holidays)
             
             # UI部品への反映
             if hasattr(self, 'zoom_unit_combo'):
