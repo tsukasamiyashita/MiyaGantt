@@ -661,6 +661,7 @@ class GanttApp(QMainWindow):
         self.summary_visible = True
         self.last_summary_base_key = None
         self.max_date = self.min_date + timedelta(days=180) # 初期範囲
+        self.last_path = ""
         
         self.init_ui()
         self.apply_styles()
@@ -1754,8 +1755,10 @@ class GanttApp(QMainWindow):
         self.update_month_labels_pos()
 
     def save_data(self):
-        p = QFileDialog.getSaveFileName(self, "保存", "", "JSON (*.json)")[0]
+        initial_dir = os.path.dirname(self.last_path) if self.last_path and os.path.exists(os.path.dirname(self.last_path)) else ""
+        p = QFileDialog.getSaveFileName(self, "保存", initial_dir, "JSON (*.json)")[0]
         if p:
+            self.last_path = p
             try:
                 data_to_save = {
                     "settings": {
@@ -1865,7 +1868,8 @@ class GanttApp(QMainWindow):
             "display_count": self.display_count,
             "summary_visible": self.summary_visible,
             "column_visibility": column_visibility,
-            "custom_holidays": self.custom_holidays
+            "custom_holidays": self.custom_holidays,
+            "last_path": self.last_path
         }
         
         try:
@@ -1890,6 +1894,7 @@ class GanttApp(QMainWindow):
             self.display_count = config.get("display_count", self.display_count)
             self.summary_visible = config.get("summary_visible", self.summary_visible)
             self.custom_holidays = config.get("custom_holidays", self.custom_holidays)
+            self.last_path = config.get("last_path", "")
             
             # UI部品への反映
             if hasattr(self, 'zoom_unit_combo'):
@@ -1909,8 +1914,10 @@ class GanttApp(QMainWindow):
             print(f"Config load error: {e}")
 
     def load_data(self):
-        p = QFileDialog.getOpenFileName(self, "開く", "", "JSON (*.json)")[0]
+        initial_dir = os.path.dirname(self.last_path) if self.last_path and os.path.exists(os.path.dirname(self.last_path)) else ""
+        p = QFileDialog.getOpenFileName(self, "開く", initial_dir, "JSON (*.json)")[0]
         if p:
+            self.last_path = p
             try:
                 with open(p, 'r', encoding='utf-8') as f:
                     loaded_data = json.load(f)
