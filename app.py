@@ -6,9 +6,9 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                QHBoxLayout, QPushButton, QTableWidget, QTableWidgetItem, 
                                QHeaderView, QSplitter, QGraphicsView, QGraphicsScene, 
                                QDialog, QFormLayout, QLineEdit, QDateEdit, QMessageBox, 
-                               QFileDialog, QGraphicsRectItem, QGraphicsTextItem, QSlider, QLabel, QMenu, QSpinBox, QColorDialog, QComboBox, QInputDialog, QAbstractItemView)
+                               QFileDialog, QGraphicsRectItem, QGraphicsTextItem, QSlider, QLabel, QMenu, QSpinBox, QColorDialog, QComboBox, QInputDialog, QAbstractItemView, QScrollArea, QGridLayout)
 from PySide6.QtCore import Qt, QDate, QRectF, QPointF, QTimer
-from PySide6.QtGui import QBrush, QPen, QColor, QFont, QPainter, QPainterPath
+from PySide6.QtGui import QBrush, QPen, QColor, QFont, QPainter, QPainterPath, QPixmap, QIcon, QCursor
 
 # TaskDialog was removed in favor of inline editing.
 
@@ -37,6 +37,46 @@ class SettingsDialog(QDialog):
         self.btn_ok = QPushButton("OK", self)
         self.btn_ok.clicked.connect(self.accept)
         self.layout.addRow(self.btn_ok)
+
+class ColorGridDialog(QDialog):
+    def __init__(self, color_groups, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("色を選択")
+        self.selected_color = None
+        
+        main_layout = QVBoxLayout(self)
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        container = QWidget()
+        container_layout = QVBoxLayout(container)
+        
+        for group_name, colors in color_groups:
+            group_label = QLabel(group_name)
+            group_label.setStyleSheet("font-weight: bold; margin-top: 10px; color: #555;")
+            container_layout.addWidget(group_label)
+            
+            grid = QGridLayout()
+            grid.setSpacing(4)
+            cols = 4 # 1行に4つ並べる
+            for i, (name, code) in enumerate(colors):
+                btn = QPushButton()
+                btn.setFixedSize(80, 30)
+                btn.setToolTip(name)
+                btn.setStyleSheet(f"background-color: {code}; border: 1px solid #ccc;")
+                btn.clicked.connect(lambda checked, c=code: self.select_color(c))
+                
+                # 色名も表示したい場合は重ねるか下に置く
+                grid.addWidget(btn, i // cols, i % cols)
+            container_layout.addLayout(grid)
+            
+        scroll.setWidget(container)
+        main_layout.addWidget(scroll)
+        
+        self.resize(380, 500)
+
+    def select_color(self, color):
+        self.selected_color = color
+        self.accept()
 
 class GanttBarItem(QGraphicsRectItem):
     def __init__(self, task, row, period_index, gantt_app, rect=None):
@@ -265,12 +305,15 @@ class GanttBarItem(QGraphicsRectItem):
 
     def contextMenuEvent(self, event):
         menu = QMenu()
-        del_action = menu.addAction("削除")
+        del_action = menu.addAction("この期間を削除")
         action = menu.exec(event.screenPos())
         if action == del_action:
-            if self.task in self.app.tasks:
-                self.app.tasks.remove(self.task)
-                QTimer.singleShot(0, self.app.update_ui)
+            if 'periods' in self.task:
+                try:
+                    self.task['periods'].pop(self.period_index)
+                    QTimer.singleShot(0, self.app.update_ui)
+                except IndexError:
+                    pass
 
 class ChartScene(QGraphicsScene):
     def __init__(self, app):
@@ -1000,9 +1043,41 @@ class GanttApp(QMainWindow):
         t = info['task']
         
         if col == 5: # Color column
-            color = QColorDialog.getColor(QColor(t.get('color', '#0078d4')), self, "色を選択")
-            if color.isValid():
-                t['color'] = color.name()
+            # 色系統別に分類して定義
+            color_groups = [
+                ("青・水色系", [
+                    ("青", "#0078d4"), ("水色", "#00bcf2"), ("紺", "#002050"), 
+                    ("空色", "#87ceeb"), ("ロイヤルブルー", "#4169e1"), ("ネイビー", "#000080")
+                ]),
+                ("緑・ライム系", [
+                    ("緑", "#107c10"), ("ライム", "#32cd32"), ("深緑", "#004b1c"),
+                    ("ミント", "#98ffed"), ("フォレストグリーン", "#228b22"), ("シーグリーン", "#2e8b57")
+                ]),
+                ("赤・桃系", [
+                    ("赤", "#d13438"), ("ワイン", "#a4262c"), ("ピンク", "#e67a91"),
+                    ("サーモン", "#fa8072"), ("マゼンタ", "#ff00ff"), ("ホットピンク", "#ff69b4")
+                ]),
+                ("橙・黄系", [
+                    ("オレンジ", "#ff8c00"), ("黄色", "#fff100"), ("ゴールド", "#ffd700"),
+                    ("コーラル", "#ff7f50"), ("アンバー", "#ffbf00"), ("カーキ", "#f0e68c")
+                ]),
+                ("紫系", [
+                    ("紫", "#5c2d91"), ("ラベンダー", "#b4a0ff"), ("バイオレット", "#ee82ee"),
+                    ("プラム", "#8b008b"), ("インディゴ", "#4b0082"), ("オーキッド", "#da70d6")
+                ]),
+                ("茶・土系", [
+                    ("茶色", "#8b4513"), ("オリーブ", "#808000"), ("テラコッタ", "#e2725b"),
+                    ("チョコ", "#d2691e"), ("ベージュ", "#f5f5dc"), ("タン", "#d2b48c")
+                ]),
+                ("無彩色系", [
+                    ("黒", "#323130"), ("灰色", "#7a7574"), ("シルバー", "#c0c0c0"),
+                    ("白鼠", "#e0e0e0"), ("スレートグレー", "#708090"), ("濃灰", "#404040")
+                ])
+            ]
+            
+            dlg = ColorGridDialog(color_groups, self)
+            if dlg.exec():
+                t['color'] = dlg.selected_color
                 self.update_ui()
 
 
