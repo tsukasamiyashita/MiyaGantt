@@ -1589,10 +1589,23 @@ class GanttApp(QMainWindow):
             
             is_custom = d_str in self.custom_holidays
             is_public = jpholiday.is_holiday(d)
-            is_holiday = is_public or is_custom
-            # 背景
-            if d.weekday() >= 5 or is_holiday:
-                bg = QColor(240, 248, 255) if d.weekday()==5 and not is_holiday else QColor(255, 240, 240)
+            
+            # 背景色の決定
+            bg = None
+            if d.weekday() == 5: # 土曜日
+                if is_custom:
+                    bg = QColor(255, 240, 240) # 既存機能：クリックで赤
+                else:
+                    bg = QColor(240, 248, 255) # デフォルト：青
+            elif d.weekday() == 6 or is_public: # 日曜日または公的祝日
+                if is_custom:
+                    bg = None # クリックで無色（白）に反転
+                else:
+                    bg = QColor(255, 240, 240) # デフォルト：赤
+            elif is_custom: # 平日でクリックされた場合
+                bg = QColor(255, 240, 240) # 赤
+            
+            if bg:
                 re = self.cs.addRect(x, 0, self.day_width, ch, QPen(Qt.NoPen), QBrush(bg))
                 re.setZValue(-20)
                 re.setAcceptedMouseButtons(Qt.NoButton)
@@ -1636,7 +1649,7 @@ class GanttApp(QMainWindow):
                 yl.setPos(x + (self.day_width/2) - 8, 52)
                 yl.setZValue(10)
                 
-                if is_holiday:
+                if is_public or is_custom:
                     h_name = self.custom_holidays.get(d_str) or jpholiday.is_holiday_name(d)
                     if h_name:
                         dl.setToolTip(h_name)
