@@ -330,6 +330,32 @@ class GanttBarItem(QGraphicsRectItem):
                 except IndexError:
                     pass
 
+class HeaderScene(QGraphicsScene):
+    def __init__(self, app):
+        super().__init__()
+        self.app = app
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            # ヘッダーの下半分（日付・曜日エリア）をクリックした場合のみ反応
+            y = event.scenePos().y()
+            if 35 <= y <= 70:
+                x = event.scenePos().x()
+                day_idx = int(x / self.app.day_width)
+                if 0 <= day_idx < self.app.display_days:
+                    d = self.app.min_date + timedelta(days=day_idx)
+                    d_str = d.strftime("%Y-%m-%d")
+                    
+                    if d_str in self.app.custom_holidays:
+                        del self.app.custom_holidays[d_str]
+                    else:
+                        self.app.custom_holidays[d_str] = "休日"
+                    
+                    self.app.draw_chart()
+                    event.accept()
+                    return
+        super().mousePressEvent(event)
+
 class ChartScene(QGraphicsScene):
     def __init__(self, app):
         super().__init__()
@@ -481,6 +507,7 @@ class GanttApp(QMainWindow):
         self.update_display_days()
         self.month_label_items = []
         self.visible_tasks_info = [] # [{index, task, indent}]
+        self.custom_holidays = {} # カスタム祝日 { 'YYYY-MM-DD': '祝日名' }
         
         self.init_ui()
         self.apply_styles()
@@ -612,7 +639,7 @@ class GanttApp(QMainWindow):
         spacer.setFixedHeight(28) # col_toggle_layout の高さ(24) + margins(4)
         rcl.addWidget(spacer)
         
-        self.hs = QGraphicsScene()
+        self.hs = HeaderScene(self)
         self.cs = ChartScene(self)
         self.hv = QGraphicsView(self.hs)
         self.chart_view = QGraphicsView(self.cs)
@@ -1223,8 +1250,9 @@ class GanttApp(QMainWindow):
         for i in range(self.display_days):
             d = self.min_date + timedelta(days=i)
             x = i * self.day_width
+            d_str = d.strftime("%Y-%m-%d")
             
-            is_holiday = jpholiday.is_holiday(d)
+            is_holiday = jpholiday.is_holiday(d) or d_str in self.custom_holidays
             # 背景
             if d.weekday() >= 5 or is_holiday:
                 bg = QColor(240, 248, 255) if d.weekday()==5 and not is_holiday else QColor(255, 240, 240)
@@ -1261,7 +1289,7 @@ class GanttApp(QMainWindow):
                 yl.setZValue(10)
                 
                 if is_holiday:
-                    h_name = jpholiday.is_holiday_name(d)
+                    h_name = self.custom_holidays.get(d_str) or jpholiday.is_holiday_name(d)
                     if h_name:
                         dl.setToolTip(h_name)
                         yl.setToolTip(h_name)
@@ -1374,7 +1402,8 @@ class GanttApp(QMainWindow):
                         "display_unit": self.display_unit,
                         "display_count": self.display_count,
                         "zoom_unit": self.zoom_unit,
-                        "zoom_count": self.zoom_count
+                        "zoom_count": self.zoom_count,
+                        "custom_holidays": self.custom_holidays
                     },
                     "tasks": self.tasks
                 }
@@ -1473,6 +1502,7 @@ class GanttApp(QMainWindow):
                     
                     self.zoom_unit = settings.get("zoom_unit", 1)
                     self.zoom_count = settings.get("zoom_count", 1)
+                    self.custom_holidays = settings.get("custom_holidays", {})
                     
                     # 読込後の状態をUIに反映
                     self.zoom_unit_combo.blockSignals(True)
