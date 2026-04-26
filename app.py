@@ -105,7 +105,11 @@ class GanttBarItem(QGraphicsRectItem):
         self.update_appearance()
 
     def update_appearance(self):
-        bc = QColor(self.task.get('color', '#0078d4'))
+        periods = self.task.get('periods', [])
+        p_dict = periods[self.period_index] if self.period_index < len(periods) else self.task
+        color_code = p_dict.get('color', self.task.get('color', '#0078d4'))
+        bc = QColor(color_code)
+        
         self.setPen(QPen(Qt.black if self.isSelected() else bc.darker(120), 2 if self.isSelected() else 1))
         self.setBrush(QBrush(bc.lighter(150)))
         
@@ -306,9 +310,18 @@ class GanttBarItem(QGraphicsRectItem):
 
     def contextMenuEvent(self, event):
         menu = QMenu()
+        color_action = menu.addAction("色を変更")
         del_action = menu.addAction("この期間を削除")
         action = menu.exec(event.screenPos())
-        if action == del_action:
+        if action == color_action:
+            color_groups = self.app.get_color_groups()
+            dlg = ColorGridDialog(color_groups, self.app)
+            if dlg.exec():
+                if 'periods' not in self.task:
+                    self.task['periods'] = [{'start_date': self.task.get('start_date', ''), 'end_date': self.task.get('end_date', '')}]
+                self.task['periods'][self.period_index]['color'] = dlg.selected_color
+                self.app.update_ui()
+        elif action == del_action:
             if 'periods' in self.task:
                 try:
                     self.task['periods'].pop(self.period_index)
@@ -873,10 +886,9 @@ class GanttApp(QMainWindow):
             if period_item:
                 period_item.setText(", ".join(p_strs))
             
-            # 合計日数の更新
-            total_days = 0
+            # 合計日数の更新 (色別集計)
+            day_map = {} # color -> days
             if t.get('is_group'):
-                # グループ内の全タスクの合計日数を集計
                 for i in range(info['index'] + 1, len(self.tasks)):
                     sub_t = self.tasks[i]
                     if sub_t.get('is_group'): break
@@ -884,17 +896,21 @@ class GanttApp(QMainWindow):
                         if p.get('start_date') and p.get('end_date'):
                             psd = datetime.strptime(p['start_date'], "%Y-%m-%d")
                             ped = datetime.strptime(p['end_date'], "%Y-%m-%d")
-                            total_days += (ped - psd).days + 1
+                            days = (ped - psd).days + 1
+                            color = p.get('color', sub_t.get('color', '#0078d4'))
+                            day_map[color] = day_map.get(color, 0) + days
             else:
                 for p in t.get('periods', []):
                     if p.get('start_date') and p.get('end_date'):
                         psd = datetime.strptime(p['start_date'], "%Y-%m-%d")
                         ped = datetime.strptime(p['end_date'], "%Y-%m-%d")
-                        total_days += (ped - psd).days + 1
+                        days = (ped - psd).days + 1
+                        color = p.get('color', t.get('color', '#0078d4'))
+                        day_map[color] = day_map.get(color, 0) + days
             
             days_item = self.table.item(r, 6)
             if days_item:
-                days_item.setText(f"{total_days}日")
+                days_item.setText(self.format_total_days(day_map))
         self.table.blockSignals(False)
 
     def create_task_from_drag(self, x1, x2, y):
@@ -1005,8 +1021,8 @@ class GanttApp(QMainWindow):
                 item_color.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                 item_days.setBackground(QColor(242, 242, 242))
                 
-                # 合計日数の計算
-                total_days = 0
+                # 合計日数の計算 (色別集計)
+                day_map = {}
                 for i in range(info['index'] + 1, len(self.tasks)):
                     sub_t = self.tasks[i]
                     if sub_t.get('is_group'): break
@@ -1014,20 +1030,25 @@ class GanttApp(QMainWindow):
                         if p.get('start_date') and p.get('end_date'):
                             psd = datetime.strptime(p['start_date'], "%Y-%m-%d")
                             ped = datetime.strptime(p['end_date'], "%Y-%m-%d")
-                            total_days += (ped - psd).days + 1
-                item_days.setText(f"{total_days}日")
+                            days = (ped - psd).days + 1
+                            color = p.get('color', sub_t.get('color', '#0078d4'))
+                            day_map[color] = day_map.get(color, 0) + days
+                item_days.setText(self.format_total_days(day_map))
             else:
                 item_prog.setText(str(t.get('progress', 0)))
                 item_prog.setTextAlignment(Qt.AlignCenter)
                 
                 periods = t.get('periods', [])
                 p_strs = []
-                total_days = 0
+                day_map = {}
                 for p in periods:
                     if not p.get('start_date') or not p.get('end_date'): continue
                     psd = datetime.strptime(p['start_date'], "%Y-%m-%d")
                     ped = datetime.strptime(p['end_date'], "%Y-%m-%d")
-                    total_days += (ped - psd).days + 1
+                    days = (ped - psd).days + 1
+                    color = p.get('color', t.get('color', '#0078d4'))
+                    day_map[color] = day_map.get(color, 0) + days
+                    
                     s = p['start_date'].replace('-', '/')
                     e = p['end_date'].replace('-', '/')
                     p_strs.append(f"{s}-{e}")
@@ -1037,7 +1058,7 @@ class GanttApp(QMainWindow):
                 item_color.setBackground(QColor(t.get('color', '#0078d4')))
                 item_color.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                 
-                item_days.setText(f"{total_days}日")
+                item_days.setText(self.format_total_days(day_map))
                 
         # 余分な行を削除
         if self.table.rowCount() > new_rows:
@@ -1094,37 +1115,7 @@ class GanttApp(QMainWindow):
         t = info['task']
         
         if col == 5: # Color column
-            # 色系統別に分類して定義
-            color_groups = [
-                ("青・水色系", [
-                    ("青", "#0078d4"), ("水色", "#00bcf2"), ("紺", "#002050"), 
-                    ("空色", "#87ceeb"), ("ロイヤルブルー", "#4169e1"), ("ネイビー", "#000080")
-                ]),
-                ("緑・ライム系", [
-                    ("緑", "#107c10"), ("ライム", "#32cd32"), ("深緑", "#004b1c"),
-                    ("ミント", "#98ffed"), ("フォレストグリーン", "#228b22"), ("シーグリーン", "#2e8b57")
-                ]),
-                ("赤・桃系", [
-                    ("赤", "#d13438"), ("ワイン", "#a4262c"), ("ピンク", "#e67a91"),
-                    ("サーモン", "#fa8072"), ("マゼンタ", "#ff00ff"), ("ホットピンク", "#ff69b4")
-                ]),
-                ("橙・黄系", [
-                    ("オレンジ", "#ff8c00"), ("黄色", "#fff100"), ("ゴールド", "#ffd700"),
-                    ("コーラル", "#ff7f50"), ("アンバー", "#ffbf00"), ("カーキ", "#f0e68c")
-                ]),
-                ("紫系", [
-                    ("紫", "#5c2d91"), ("ラベンダー", "#b4a0ff"), ("バイオレット", "#ee82ee"),
-                    ("プラム", "#8b008b"), ("インディゴ", "#4b0082"), ("オーキッド", "#da70d6")
-                ]),
-                ("茶・土系", [
-                    ("茶色", "#8b4513"), ("オリーブ", "#808000"), ("テラコッタ", "#e2725b"),
-                    ("チョコ", "#d2691e"), ("ベージュ", "#f5f5dc"), ("タン", "#d2b48c")
-                ]),
-                ("無彩色系", [
-                    ("黒", "#323130"), ("灰色", "#7a7574"), ("シルバー", "#c0c0c0"),
-                    ("白鼠", "#e0e0e0"), ("スレートグレー", "#708090"), ("濃灰", "#404040")
-                ])
-            ]
+            color_groups = self.get_color_groups()
             
             dlg = ColorGridDialog(color_groups, self)
             if dlg.exec():
@@ -1302,6 +1293,57 @@ class GanttApp(QMainWindow):
                 QMessageBox.information(self, "成功", "保存しました。")
             except Exception as e:
                 QMessageBox.critical(self, "エラー", f"保存失敗: {e}")
+
+    def get_color_groups(self):
+        return [
+            ("青・水色系", [
+                ("青", "#0078d4"), ("水色", "#00bcf2"), ("紺", "#002050"), 
+                ("空色", "#87ceeb"), ("ロイヤルブルー", "#4169e1"), ("ネイビー", "#000080")
+            ]),
+            ("緑・ライム系", [
+                ("緑", "#107c10"), ("ライム", "#32cd32"), ("深緑", "#004b1c"),
+                ("ミント", "#98ffed"), ("フォレストグリーン", "#228b22"), ("シーグリーン", "#2e8b57")
+            ]),
+            ("赤・桃系", [
+                ("赤", "#d13438"), ("ワイン", "#a4262c"), ("ピンク", "#e67a91"),
+                ("サーモン", "#fa8072"), ("マゼンタ", "#ff00ff"), ("ホットピンク", "#ff69b4")
+            ]),
+            ("橙・黄系", [
+                ("オレンジ", "#ff8c00"), ("黄色", "#fff100"), ("ゴールド", "#ffd700"),
+                ("コーラル", "#ff7f50"), ("アンバー", "#ffbf00"), ("カーキ", "#f0e68c")
+            ]),
+            ("紫系", [
+                ("紫", "#5c2d91"), ("ラベンダー", "#b4a0ff"), ("バイオレット", "#ee82ee"),
+                ("プラム", "#8b008b"), ("インディゴ", "#4b0082"), ("オーキッド", "#da70d6")
+            ]),
+            ("茶・土系", [
+                ("茶色", "#8b4513"), ("オリーブ", "#808000"), ("テラコッタ", "#e2725b"),
+                ("チョコ", "#d2691e"), ("ベージュ", "#f5f5dc"), ("タン", "#d2b48c")
+            ]),
+            ("無彩色系", [
+                ("黒", "#323130"), ("灰色", "#7a7574"), ("シルバー", "#c0c0c0"),
+                ("白鼠", "#e0e0e0"), ("スレートグレー", "#708090"), ("濃灰", "#404040")
+            ])
+        ]
+
+    def get_color_name(self, hex_code):
+        groups = self.get_color_groups()
+        for gn, colors in groups:
+            for name, code in colors:
+                if code.lower() == hex_code.lower():
+                    return name
+        return "不明"
+
+    def format_total_days(self, day_map):
+        if not day_map: return "0日"
+        if len(day_map) == 1:
+            return f"{list(day_map.values())[0]}日"
+        
+        parts = []
+        for code, days in day_map.items():
+            name = self.get_color_name(code)
+            parts.append(f"{name}: {days}日")
+        return ", ".join(parts)
 
     def load_data(self):
         p = QFileDialog.getOpenFileName(self, "開く", "", "JSON (*.json)")[0]
