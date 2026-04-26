@@ -16,24 +16,23 @@ from PySide6.QtGui import QBrush, QPen, QColor, QFont, QPainter, QPainterPath, Q
 class SettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("表示設定")
+        self.setWindowTitle("編集期間")
         self.layout = QFormLayout(self)
         
         self.start_date_edit = QDateEdit(self)
         self.start_date_edit.setCalendarPopup(True)
         self.start_date_edit.setDate(parent.min_date.date() if parent else QDate.currentDate())
         
-        self.unit_combo = QComboBox(self)
-        self.unit_combo.addItems(["週間", "月間", "年間"])
-        self.unit_combo.setCurrentIndex(parent.display_unit if parent else 1)
+        self.end_date_edit = QDateEdit(self)
+        self.end_date_edit.setCalendarPopup(True)
+        if parent:
+            end_date = parent.min_date + timedelta(days=parent.display_days - 1)
+            self.end_date_edit.setDate(end_date.date())
+        else:
+            self.end_date_edit.setDate(QDate.currentDate().addDays(30))
         
-        self.count_spinbox = QSpinBox(self)
-        self.count_spinbox.setRange(1, 500)
-        self.count_spinbox.setValue(parent.display_count if parent else 6)
-        
-        self.layout.addRow("表示開始日:", self.start_date_edit)
-        self.layout.addRow("表示単位:", self.unit_combo)
-        self.layout.addRow("表示数:", self.count_spinbox)
+        self.layout.addRow("開始日:", self.start_date_edit)
+        self.layout.addRow("終了日:", self.end_date_edit)
         
         self.btn_ok = QPushButton("OK", self)
         self.btn_ok.clicked.connect(self.accept)
@@ -660,6 +659,7 @@ class GanttApp(QMainWindow):
         self.custom_holidays = {} # カスタム祝日 { 'YYYY-MM-DD': '祝日名' }
         self.summary_visible = True
         self.last_summary_base_key = None
+        self.max_date = self.min_date + timedelta(days=180) # 初期範囲
         
         self.init_ui()
         self.apply_styles()
@@ -714,7 +714,7 @@ class GanttApp(QMainWindow):
         
         self.btn_load = QPushButton("読込")
         self.btn_save = QPushButton("保存")
-        self.btn_settings = QPushButton("⚙ 表示設定")
+        self.btn_settings = QPushButton("⚙ 編集期間")
         self.btn_summary = QPushButton("📊 集計")
         self.btn_load.clicked.connect(self.load_data)
         self.btn_save.clicked.connect(self.save_data)
@@ -896,7 +896,12 @@ class GanttApp(QMainWindow):
         self.update_ui()
 
     def update_display_days(self):
-        # 単位と数に基づいて表示日数を計算する
+        # 明示的な終了日が設定されている場合はそれを使用
+        if hasattr(self, 'max_date') and self.max_date:
+            self.display_days = max(1, (self.max_date - self.min_date).days + 1)
+            return
+
+        # 単位と数に基づいて表示日数を計算する (互換性用)
         if self.display_unit == 0: # 週間
             self.display_days = self.display_count * 7
         elif self.display_unit == 1: # 月間
@@ -916,6 +921,8 @@ class GanttApp(QMainWindow):
             d = min(self.min_date.day, last_day)
             end_date = datetime(y, m, d)
             self.display_days = max(1, (end_date - self.min_date).days)
+        
+        self.max_date = self.min_date + timedelta(days=self.display_days - 1)
 
     def parse_date(self, s):
         s = s.strip().replace('/', '-')
@@ -1518,11 +1525,13 @@ class GanttApp(QMainWindow):
     def open_settings(self):
         dlg = SettingsDialog(self)
         if dlg.exec():
-            # QDate を Python の datetime に変換
-            qd = dlg.start_date_edit.date()
-            self.min_date = datetime(qd.year(), qd.month(), qd.day())
-            self.display_unit = dlg.unit_combo.currentIndex()
-            self.display_count = dlg.count_spinbox.value()
+            qs = dlg.start_date_edit.date()
+            qe = dlg.end_date_edit.date()
+            self.min_date = datetime(qs.year(), qs.month(), qs.day())
+            self.max_date = datetime(qe.year(), qe.month(), qe.day())
+            
+            if self.max_date < self.min_date:
+                self.max_date = self.min_date
             
             self.update_display_range()
 
@@ -1690,6 +1699,7 @@ class GanttApp(QMainWindow):
                 data_to_save = {
                     "settings": {
                         "min_date": self.min_date.strftime("%Y-%m-%d"),
+                        "max_date": self.max_date.strftime("%Y-%m-%d") if hasattr(self, 'max_date') else None,
                         "display_unit": self.display_unit,
                         "display_count": self.display_count,
                         "zoom_unit": self.zoom_unit,
@@ -1783,10 +1793,16 @@ class GanttApp(QMainWindow):
                     self.tasks = loaded_data["tasks"]
                     settings = loaded_data.get("settings", {})
                     min_date_str = settings.get("min_date")
+                    max_date_str = settings.get("max_date")
                     if min_date_str:
                         self.min_date = datetime.strptime(min_date_str, "%Y-%m-%d")
                     else:
                         self.min_date = datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+                    
+                    if max_date_str:
+                        self.max_date = datetime.strptime(max_date_str, "%Y-%m-%d")
+                    else:
+                        self.max_date = None # 下記の update_display_days で計算される
                     
                     self.display_unit = settings.get("display_unit")
                     self.display_count = settings.get("display_count")
