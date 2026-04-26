@@ -826,18 +826,19 @@ class GanttApp(QMainWindow):
         if self.day_width <= 0: return
         days_scrolled = v / self.day_width
         visible_start = self.min_date + timedelta(days=days_scrolled)
+        threshold_date = self.get_threshold_date(visible_start)
         
         # 現在の「基準単位」を特定して、変更があった場合のみ更新
         if self.display_unit == 0: # 週間
-            base_key = (visible_start - timedelta(days=visible_start.weekday())).strftime("%Y-%W")
+            base_key = (threshold_date - timedelta(days=threshold_date.weekday())).strftime("%Y-%W")
         elif self.display_unit == 1: # 月間
-            base_key = visible_start.strftime("%Y-%m")
+            base_key = threshold_date.strftime("%Y-%m")
         else: # 年間
-            base_key = visible_start.strftime("%Y")
+            base_key = threshold_date.strftime("%Y")
             
         if base_key != self.last_summary_base_key:
             self.last_summary_base_key = base_key
-            self.sync_summary_to_scroll(visible_start)
+            self.sync_summary_to_scroll(threshold_date)
 
     def update_month_labels_pos(self):
         try:
@@ -1160,6 +1161,16 @@ class GanttApp(QMainWindow):
         if s_dates and e_dates:
             return min(s_dates), max(e_dates)
         return "", ""
+
+    def get_threshold_date(self, visible_start):
+        if self.display_unit == 0: # 週間
+            return visible_start + timedelta(days=2)
+        elif self.display_unit == 1: # 月間
+            return visible_start + timedelta(days=7)
+        else: # 年間
+            # 1ヶ月前 (約30日)
+            return visible_start + timedelta(days=30)
+
     def get_summary_headers(self, base_date=None, count=None):
         if base_date is None: base_date = self.min_date
         if count is None:
@@ -1336,8 +1347,9 @@ class GanttApp(QMainWindow):
         scroll_val = self.chart_view.horizontalScrollBar().value()
         days_scrolled = scroll_val / self.day_width if self.day_width > 0 else 0
         visible_start = self.min_date + timedelta(days=days_scrolled)
+        threshold_date = self.get_threshold_date(visible_start)
         
-        headers = self.get_summary_headers(visible_start)
+        headers = self.get_summary_headers(threshold_date)
         base_col_count = 6
         total_cols = base_col_count + len(headers)
         self.table.setColumnCount(total_cols)
