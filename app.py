@@ -6,9 +6,9 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                QHBoxLayout, QPushButton, QTableWidget, QTableWidgetItem, 
                                QHeaderView, QSplitter, QGraphicsView, QGraphicsScene, 
                                QDialog, QFormLayout, QLineEdit, QDateEdit, QMessageBox, 
-                               QFileDialog, QGraphicsRectItem, QGraphicsTextItem, QSlider, QLabel, QMenu, QSpinBox, QColorDialog, QComboBox, QInputDialog)
+                               QFileDialog, QGraphicsRectItem, QGraphicsTextItem, QSlider, QLabel, QMenu, QSpinBox, QColorDialog, QComboBox, QInputDialog, QAbstractItemView)
 from PySide6.QtCore import Qt, QDate, QRectF, QPointF, QTimer
-from PySide6.QtGui import QBrush, QPen, QColor, QFont, QPainter
+from PySide6.QtGui import QBrush, QPen, QColor, QFont, QPainter, QPainterPath
 
 # TaskDialog was removed in favor of inline editing.
 
@@ -167,7 +167,8 @@ class GanttBarItem(QGraphicsRectItem):
             # マウスカーソルの位置に基づいて行の中心にスナップ
             row = int(event.scenePos().y() / self.app.row_height)
             # タスクが存在する行の範囲内に制限
-            row = max(0, min(len(self.app.tasks) - 1, row)) if self.app.tasks else 0
+            max_row = len(self.app.visible_tasks_info) - 1 if self.app.visible_tasks_info else 0
+            row = max(0, min(max_row, row))
             self.setPos(self.pos().x(), row * self.app.row_height + 10)
         self.update_appearance()
 
@@ -184,12 +185,22 @@ class GanttBarItem(QGraphicsRectItem):
 
         # 移動先の行を判定
         new_row = int(event.scenePos().y() / self.app.row_height)
-        new_row = max(0, min(len(self.app.tasks) - 1, new_row)) if self.app.tasks else 0
+        max_row = len(self.app.visible_tasks_info) - 1 if self.app.visible_tasks_info else 0
+        new_row = max(0, min(max_row, new_row))
         
         # サイズ調整中ではなかった場合のみ行移動を許可
         if not was_resizing and new_row != self.row:
+            target_info = self.app.visible_tasks_info[new_row]
+            target_task = target_info['task']
+            
+            # グループ行への移動は禁止
+            if target_task.get('is_group'):
+                QTimer.singleShot(0, self.app.update_ui)
+                super().mouseReleaseEvent(event)
+                return
+
             # 移動元・移動先の両方で 'periods' 形式を確定させる
-            for t in [self.task, self.app.tasks[new_row]]:
+            for t in [self.task, target_task]:
                 if 'periods' not in t:
                     t['periods'] = [{'start_date': t.get('start_date', ''), 'end_date': t.get('end_date', '')}]
             
@@ -261,6 +272,47 @@ class GanttBarItem(QGraphicsRectItem):
                 self.app.tasks.remove(self.task)
                 QTimer.singleShot(0, self.app.update_ui)
 
+class GanttGroupItem(QGraphicsRectItem):
+    def __init__(self, task, row, start_date, end_date, gantt_app):
+        super().__init__()
+        self.task = task
+        self.row = row
+        self.app = gantt_app
+        self.start_date = start_date
+        self.end_date = end_date
+        self.setZValue(25)
+        self.update_appearance()
+
+    def update_appearance(self):
+        try:
+            sd = datetime.strptime(self.start_date, "%Y-%m-%d")
+            ed = datetime.strptime(self.end_date, "%Y-%m-%d")
+            x = (sd - self.app.min_date).days * self.app.day_width
+            w = ((ed - sd).days + 1) * self.app.day_width
+            y = self.row * self.app.row_height + 12
+            h = 10
+            
+            # ブラケット形状のパスを作成
+            path = QPainterPath()
+            path.moveTo(x, y + h)
+            path.lineTo(x, y)
+            path.lineTo(x + w, y)
+            path.lineTo(x + w, y + h)
+            path.lineTo(x + w - 5, y + h - 5)
+            path.lineTo(x + w - 5, y + 5)
+            path.lineTo(x + 5, y + 5)
+            path.lineTo(x + 5, y + h - 5)
+            path.closeSubpath()
+            
+            # 簡易的に矩形で表現（パスが複雑な場合はこちら）
+            self.setRect(x, y, w, h)
+            self.setBrush(QBrush(QColor(60, 60, 60)))
+            self.setPen(QPen(Qt.black, 1))
+            
+            self.setToolTip(f"グループ: {self.task.get('name','')}\n期間: {self.start_date}〜{self.end_date}")
+        except:
+            pass
+
 class ChartScene(QGraphicsScene):
     def __init__(self, app):
         super().__init__()
@@ -284,13 +336,20 @@ class ChartScene(QGraphicsScene):
 
     def mouseDoubleClickEvent(self, e):
         items = self.items(e.scenePos(), Qt.IntersectsItemShape, Qt.DescendingOrder, self.app.chart_view.transform())
-        gantt_item = next((it for it in items if isinstance(it, GanttBarItem)), None)
+        gantt_item = next((it for it in items if isinstance(it, (GanttBarItem, GanttGroupItem))), None)
             
         if not gantt_item and e.button() == Qt.LeftButton:
             y = e.scenePos().y()
             row = int(y / self.app.row_height)
-            if 0 <= row < len(self.app.tasks):
-                task = self.app.tasks[row]
+            if 0 <= row < len(self.app.visible_tasks_info):
+                info = self.app.visible_tasks_info[row]
+                task = info['task']
+                if task.get('is_group'):
+                    # グループの場合は折り畳み
+                    task['collapsed'] = not task.get('collapsed', False)
+                    self.app.update_ui()
+                    return
+
                 x = e.scenePos().x()
                 day_idx = int(x / self.app.day_width)
                 d_str = (self.app.min_date + timedelta(days=day_idx)).strftime("%Y-%m-%d")
@@ -298,17 +357,14 @@ class ChartScene(QGraphicsScene):
                 if 'periods' not in task:
                     task['periods'] = [{'start_date': task.get('start_date', ''), 'end_date': task.get('end_date', '')}]
                 
-                # 新しい期間（空のテキスト）を追加
                 task['periods'].append({"start_date": d_str, "end_date": d_str, "text": ""})
                 self.app.update_ui()
                 e.accept()
-                return # 新しく作成されたバーにダブルクリックイベントが伝播するのを防ぐ
+                return
         super().mouseDoubleClickEvent(e)
 
     def contextMenuEvent(self, e):
-        # 背景（アイテムがない場所）を右クリックした場合のみメニューを表示
         item = self.itemAt(e.scenePos(), self.app.chart_view.transform())
-        # 背景アイテム（土日の矩形やグリッド線など）は「アイテムなし」として扱う
         if item and not isinstance(item, GanttBarItem):
             item = None
             
@@ -317,16 +373,22 @@ class ChartScene(QGraphicsScene):
             row = int(y / self.app.row_height)
             menu = QMenu()
             
-            if 0 <= row < len(self.app.tasks):
-                task = self.app.tasks[row]
-                task_name = task.get('name', '無題')
-                add_period_action = menu.addAction(f"「{task_name}」に期間を追加")
+            if 0 <= row < len(self.app.visible_tasks_info):
+                info = self.app.visible_tasks_info[row]
+                task = info['task']
+                if task.get('is_group'):
+                    add_task_in_group = menu.addAction("このグループにタスクを追加")
+                    add_period_action = None
+                else:
+                    task_name = task.get('name', '無題')
+                    add_period_action = menu.addAction(f"「{task_name}」に期間を追加")
+                    add_task_in_group = None
             else:
                 add_period_action = None
+                add_task_in_group = None
             
             action = menu.exec(e.screenPos())
             x = e.scenePos().x()
-            # クリックした日の日付を取得（1日間とする）
             day_idx = int(x / self.app.day_width)
             d_str = (self.app.min_date + timedelta(days=day_idx)).strftime("%Y-%m-%d")
             
@@ -335,8 +397,24 @@ class ChartScene(QGraphicsScene):
                     task['periods'] = [{'start_date': task.get('start_date', ''), 'end_date': task.get('end_date', '')}]
                 task['periods'].append({"start_date": d_str, "end_date": d_str})
                 self.app.update_ui()
+            elif action == add_task_in_group and add_task_in_group:
+                new_task = {
+                    "name": "新規タスク",
+                    "periods": [{"start_date": d_str, "end_date": d_str}],
+                    "progress": 0,
+                    "color": "#0078d4"
+                }
+                # グループの直後に挿入
+                self.app.tasks.insert(info['index'] + 1, new_task)
+                self.app.update_ui()
         else:
             super().contextMenuEvent(e)
+
+class TaskTable(QTableWidget):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setSelectionMode(QTableWidget.SingleSelection)
+        self.setSelectionBehavior(QTableWidget.SelectRows)
 
 class GanttApp(QMainWindow):
     def __init__(self):
@@ -354,6 +432,7 @@ class GanttApp(QMainWindow):
         self.zoom_count = 1    # デフォルトで1単位分を1画面に収める
         self.update_display_days()
         self.month_label_items = []
+        self.visible_tasks_info = [] # [{index, task, indent}]
         
         self.init_ui()
         self.apply_styles()
@@ -375,10 +454,19 @@ class GanttApp(QMainWindow):
         tl = QHBoxLayout()
         
         self.btn_add = QPushButton("追加")
+        self.btn_group = QPushButton("グループ")
+        self.btn_up = QPushButton("↑")
+        self.btn_down = QPushButton("↓")
         self.btn_del = QPushButton("削除")
         self.btn_add.clicked.connect(self.add_task)
+        self.btn_group.clicked.connect(self.add_group)
+        self.btn_up.clicked.connect(self.move_row_up)
+        self.btn_down.clicked.connect(self.move_row_down)
         self.btn_del.clicked.connect(self.delete_task)
         tl.addWidget(self.btn_add)
+        tl.addWidget(self.btn_group)
+        tl.addWidget(self.btn_up)
+        tl.addWidget(self.btn_down)
         tl.addWidget(self.btn_del)
         tl.addStretch()
         
@@ -410,15 +498,17 @@ class GanttApp(QMainWindow):
         self.splitter = QSplitter(Qt.Horizontal)
         ml.addWidget(self.splitter)
         
-        self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["タスク名", "進捗(%)", "期間指定", "色"])
+        self.table = TaskTable(0, 5)
+        self.table.setHorizontalHeaderLabels(["", "タスク名", "進捗(%)", "期間指定", "色"])
+        self.table.setColumnWidth(0, 30)
         self.table.horizontalHeader().setFixedHeight(self.header_height)
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.table.verticalHeader().setDefaultSectionSize(self.row_height)
         self.table.verticalHeader().setVisible(False)
-        self.table.setSelectionBehavior(QTableWidget.SelectItems)
+        self.table.setSelectionBehavior(QTableWidget.SelectRows)
         
         self.table.itemChanged.connect(self.on_table_item_changed)
+        self.table.cellClicked.connect(self.on_table_cell_clicked)
         self.table.cellDoubleClicked.connect(self.on_table_cell_double_clicked)
         
         self.splitter.addWidget(self.table)
@@ -547,6 +637,146 @@ class GanttApp(QMainWindow):
                 periods.append({"start_date": start_d, "end_date": end_d})
         return periods
 
+    def move_row_up(self):
+        row = self.table.currentRow()
+        if row <= 0: return
+        
+        info = self.visible_tasks_info[row]
+        task_to_track = info['task']
+        
+        if task_to_track.get('is_group'):
+            # グループを上に移動：前のグループのさらに上へ
+            target_v_row = row - 1
+            while target_v_row > 0 and not self.visible_tasks_info[target_v_row]['task'].get('is_group'):
+                target_v_row -= 1
+            self.move_tasks([row], target_v_row)
+        else:
+            # タスクを上に移動：1行上へ
+            self.move_tasks([row], row - 1)
+            
+        # 移動後の位置を特定して再選択
+        for i, n_info in enumerate(self.visible_tasks_info):
+            if n_info['task'] == task_to_track:
+                self.table.setCurrentCell(i, 1)
+                break
+
+    def move_row_down(self):
+        row = self.table.currentRow()
+        if row < 0 or row >= len(self.visible_tasks_info) - 1: return
+        
+        info = self.visible_tasks_info[row]
+        task_to_track = info['task']
+        
+        if task_to_track.get('is_group'):
+            # グループを下に移動：次のグループのさらに下へ
+            # まず現在のグループの終わり（可視行）を探す
+            current_group_end_v = row + 1
+            end_idx = info['index'] + 1
+            for i in range(info['index'] + 1, len(self.tasks)):
+                if self.tasks[i].get('is_group'): break
+                end_idx = i + 1
+            for i in range(row + 1, len(self.visible_tasks_info)):
+                if self.visible_tasks_info[i]['index'] >= end_idx: break
+                current_group_end_v = i + 1
+            
+            # 次のグループを探す
+            next_group_v = -1
+            for i in range(current_group_end_v, len(self.visible_tasks_info)):
+                if self.visible_tasks_info[i]['task'].get('is_group'):
+                    next_group_v = i
+                    break
+            
+            if next_group_v == -1:
+                # 次のグループがない場合は末尾へ
+                target_v_row = len(self.visible_tasks_info)
+            else:
+                # 次のグループの末尾を探す
+                target_v_row = next_group_v + 1
+                ng_end_idx = self.visible_tasks_info[next_group_v]['index'] + 1
+                for i in range(self.visible_tasks_info[next_group_v]['index'] + 1, len(self.tasks)):
+                    if self.tasks[i].get('is_group'): break
+                    ng_end_idx = i + 1
+                for i in range(next_group_v + 1, len(self.visible_tasks_info)):
+                    if self.visible_tasks_info[i]['index'] >= ng_end_idx: break
+                    target_v_row = i + 1
+            
+            self.move_tasks([row], target_v_row)
+        else:
+            # タスクを下に移動：1行下へ
+            # 下の要素がグループだった場合や、通常のタスクだった場合でも、row+2 を指定すればその要素の後ろに行く
+            self.move_tasks([row], row + 2)
+            
+        # 移動後の位置を特定して再選択
+        for i, n_info in enumerate(self.visible_tasks_info):
+            if n_info['task'] == task_to_track:
+                self.table.setCurrentCell(i, 1)
+                break
+
+    def move_tasks(self, source_rows, target_row, refresh_chart=True):
+        if not source_rows: return
+        
+        src_v_row = source_rows[0]
+        if src_v_row >= len(self.visible_tasks_info): return
+        
+        info = self.visible_tasks_info[src_v_row]
+        src_idx = info['index']
+        is_group = info['task'].get('is_group', False)
+        
+        # 移動するブロック（実インデックスの範囲）を特定
+        start_idx = src_idx
+        end_idx = src_idx + 1
+        if is_group:
+            # グループの場合は、次のグループが現れるまでの全タスクをブロックとする
+            for i in range(src_idx + 1, len(self.tasks)):
+                if self.tasks[i].get('is_group'):
+                    break
+                end_idx = i + 1
+        
+        block = self.tasks[start_idx:end_idx]
+        
+        # ブロックに含まれる「可視行」の数をカウント（無効なドロップ判定のため）
+        visible_count = 1
+        if is_group and not info['task'].get('collapsed'):
+            for i in range(src_v_row + 1, len(self.visible_tasks_info)):
+                if self.visible_tasks_info[i]['index'] >= end_idx:
+                    break
+                visible_count += 1
+        
+        # データの並べ替えを実行
+        # 1. 移動するブロックを一旦取り出す
+        remaining_tasks = self.tasks[:start_idx] + self.tasks[end_idx:]
+        
+        # 2. 挿入位置にあるタスクを特定して、残ったリスト内での位置を探す
+        target_task = None
+        if target_row < len(self.visible_tasks_info):
+            target_task = self.visible_tasks_info[target_row]['task']
+            
+        # 自分自身のブロック内へのドロップは無視
+        if target_task in block:
+            return
+
+        if target_task is None:
+            new_target_idx = len(remaining_tasks)
+        else:
+            try:
+                new_target_idx = remaining_tasks.index(target_task)
+            except ValueError:
+                # 万が一見つからない場合は末尾へ
+                new_target_idx = len(remaining_tasks)
+                
+        # グループ移動時の制約：タスク間には移動できない（次のグループの直前または末尾にスナップさせる）
+        if is_group:
+            while new_target_idx < len(remaining_tasks):
+                if remaining_tasks[new_target_idx].get('is_group'):
+                    break
+                new_target_idx += 1
+            
+        # 3. 新しい位置にブロックを挿入
+        remaining_tasks[new_target_idx:new_target_idx] = block
+        self.tasks = remaining_tasks
+        
+        self.update_ui(refresh_chart)
+
     def add_task(self):
         t = {
             "name": f"新規タスク {len(self.tasks)+1}",
@@ -556,14 +786,54 @@ class GanttApp(QMainWindow):
         }
         self.tasks.append(t)
         self.update_ui()
-        self.table.editItem(self.table.item(len(self.tasks)-1, 0))
+        self.table.editItem(self.table.item(len(self.visible_tasks_info)-1, 1))
+
+    def add_group(self):
+        g = {
+            "name": f"新規グループ {len(self.tasks)+1}",
+            "is_group": True,
+            "collapsed": False,
+            "color": "#555555"
+        }
+        self.tasks.append(g)
+        self.update_ui()
+        self.table.editItem(self.table.item(len(self.visible_tasks_info)-1, 1))
 
     def delete_task(self):
         r = self.table.currentRow()
-        if r >= 0:
+        if r >= 0 and r < len(self.visible_tasks_info):
             if QMessageBox.question(self, "確認", "削除しますか？") == QMessageBox.Yes:
-                self.tasks.pop(r)
+                idx = self.visible_tasks_info[r]['index']
+                self.tasks.pop(idx)
                 self.update_ui()
+
+    def get_visible_tasks_info(self):
+        visible = []
+        skip_until_next_group = False
+        for i, t in enumerate(self.tasks):
+            if t.get('is_group'):
+                visible.append({'index': i, 'task': t, 'indent': 0})
+                skip_until_next_group = t.get('collapsed', False)
+            else:
+                if not skip_until_next_group:
+                    # 前方にグループがあるか確認
+                    has_group = any(self.tasks[j].get('is_group') for j in range(i))
+                    visible.append({'index': i, 'task': t, 'indent': 1 if has_group else 0})
+        return visible
+
+    def get_group_range(self, group_index):
+        start_dates = []
+        end_dates = []
+        for i in range(group_index + 1, len(self.tasks)):
+            t = self.tasks[i]
+            if t.get('is_group'):
+                break
+            s, e = self.get_task_dates(t)
+            if s: start_dates.append(s)
+            if e: end_dates.append(e)
+        if start_dates and end_dates:
+            return min(start_dates), max(end_dates)
+        return None, None
 
     def get_task_dates(self, task):
         s_dates = []
@@ -580,7 +850,10 @@ class GanttApp(QMainWindow):
 
     def sync_table_from_tasks(self):
         self.table.blockSignals(True)
-        for r, t in enumerate(self.tasks):
+        for r, info in enumerate(self.visible_tasks_info):
+            t = info['task']
+            if t.get('is_group'): continue
+            
             periods = t.get('periods', [])
             p_strs = []
             for p in periods:
@@ -589,7 +862,7 @@ class GanttApp(QMainWindow):
                 e = p['end_date'].replace('-', '/')
                 p_strs.append(f"{s}-{e}")
             
-            period_item = self.table.item(r, 2)
+            period_item = self.table.item(r, 3)
             if period_item:
                 period_item.setText(", ".join(p_strs))
         self.table.blockSignals(False)
@@ -609,51 +882,119 @@ class GanttApp(QMainWindow):
             "progress": 0, 
             "color": "#0078d4"
         }
-        if row < len(self.tasks):
-            self.tasks.insert(row, t)
+        if row < len(self.visible_tasks_info):
+            insert_idx = self.visible_tasks_info[row]['index']
+            self.tasks.insert(insert_idx, t)
         else:
             self.tasks.append(t)
         self.update_ui()
 
-    def update_ui(self):
+    def update_ui(self, refresh_chart=True):
+        self.visible_tasks_info = self.get_visible_tasks_info()
         self.table.blockSignals(True)
-        self.table.setRowCount(len(self.tasks))
-        for r, t in enumerate(self.tasks):
-            item_name = QTableWidgetItem(t.get('name', ''))
-            self.table.setItem(r, 0, item_name)
+        
+        new_rows = len(self.visible_tasks_info)
+        if self.table.rowCount() < new_rows:
+            self.table.setRowCount(new_rows)
             
-            item_prog = QTableWidgetItem(str(t.get('progress', 0)))
-            item_prog.setTextAlignment(Qt.AlignCenter)
-            self.table.setItem(r, 1, item_prog)
+        for r, info in enumerate(self.visible_tasks_info):
+            t = info['task']
+            indent = "    " * info['indent']
+            is_group = t.get('is_group', False)
             
-            periods = t.get('periods', [])
-            p_strs = []
-            for p in periods:
-                if not p.get('start_date') or not p.get('end_date'): continue
-                s = p['start_date'].replace('-', '/')
-                e = p['end_date'].replace('-', '/')
-                p_strs.append(f"{s}-{e}")
+            # セルが存在しない場合のみ生成する
+            for c in range(5):
+                if self.table.item(r, c) is None:
+                    self.table.setItem(r, c, QTableWidgetItem())
+            
+            # 0: Toggle
+            toggle_item = self.table.item(r, 0)
+            toggle_item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+            toggle_item.setForeground(QColor(51, 51, 51))
+            f = toggle_item.font(); f.setBold(False); toggle_item.setFont(f)
+            toggle_item.setBackground(QColor(255, 255, 255))
+            
+            if is_group:
+                toggle_item.setText("▼" if not t.get('collapsed') else "▶")
+                toggle_item.setTextAlignment(Qt.AlignCenter)
+                f = toggle_item.font(); f.setBold(True); toggle_item.setFont(f)
+                toggle_item.setBackground(QColor(242, 242, 242))
+            else:
+                toggle_item.setText("")
+
+            # 1: Name
+            item_name = self.table.item(r, 1)
+            item_name.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
+            item_name.setForeground(QColor(51, 51, 51))
+            f = item_name.font(); f.setBold(False); item_name.setFont(f)
+            item_name.setBackground(QColor(255, 255, 255))
+            item_name.setText(indent + t.get('name', ''))
+            if is_group:
+                f = item_name.font(); f.setBold(True); item_name.setFont(f)
+                item_name.setBackground(QColor(242, 242, 242))
+            
+            # 2: Progress
+            item_prog = self.table.item(r, 2)
+            item_prog.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
+            item_prog.setForeground(QColor(51, 51, 51))
+            item_prog.setBackground(QColor(255, 255, 255))
+            
+            # 3: Period
+            item_period = self.table.item(r, 3)
+            item_period.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
+            item_period.setForeground(QColor(51, 51, 51))
+            item_period.setBackground(QColor(255, 255, 255))
+            
+            # 4: Color
+            item_color = self.table.item(r, 4)
+            item_color.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
+            item_color.setForeground(QColor(51, 51, 51))
+            item_color.setBackground(QColor(255, 255, 255))
+
+            if is_group:
+                item_prog.setText("")
+                item_prog.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+                item_period.setText("")
+                item_period.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+                item_color.setText("")
+                item_color.setBackground(QColor(200, 200, 200))
+                item_color.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+            else:
+                item_prog.setText(str(t.get('progress', 0)))
+                item_prog.setTextAlignment(Qt.AlignCenter)
                 
-            item_period = QTableWidgetItem(", ".join(p_strs))
-            self.table.setItem(r, 2, item_period)
-            
-            item_color = QTableWidgetItem("")
-            item_color.setBackground(QColor(t.get('color', '#0078d4')))
-            item_color.setFlags(item_color.flags() & ~Qt.ItemIsEditable) 
-            self.table.setItem(r, 3, item_color)
+                periods = t.get('periods', [])
+                p_strs = []
+                for p in periods:
+                    if not p.get('start_date') or not p.get('end_date'): continue
+                    s = p['start_date'].replace('-', '/')
+                    e = p['end_date'].replace('-', '/')
+                    p_strs.append(f"{s}-{e}")
+                item_period.setText(", ".join(p_strs))
+                
+                item_color.setText("")
+                item_color.setBackground(QColor(t.get('color', '#0078d4')))
+                item_color.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+                
+        # 余分な行を削除
+        if self.table.rowCount() > new_rows:
+            self.table.setRowCount(new_rows)
             
         self.table.blockSignals(False)
-        self.draw_chart()
+        if refresh_chart:
+            self.draw_chart()
 
     def on_table_item_changed(self, item):
         row = item.row()
         col = item.column()
-        if row >= len(self.tasks) or row < 0: return
-        t = self.tasks[row]
+        if row >= len(self.visible_tasks_info) or row < 0: return
+        info = self.visible_tasks_info[row]
+        t = info['task']
         
-        if col == 0:
-            t['name'] = item.text()
-        elif col == 1:
+        if col == 1: # Name
+            t['name'] = item.text().strip()
+        elif col == 2: # Progress
+            if t.get('is_group'): return
             try:
                 prog = int(item.text().replace('%', '').strip())
                 t['progress'] = max(0, min(100, prog))
@@ -662,7 +1003,8 @@ class GanttApp(QMainWindow):
             self.table.blockSignals(True)
             item.setText(str(t['progress']))
             self.table.blockSignals(False)
-        elif col == 2:
+        elif col == 3: # Period
+            if t.get('is_group'): return
             period_str = item.text()
             parsed = self.get_periods_from_string(period_str)
             if parsed:
@@ -672,13 +1014,26 @@ class GanttApp(QMainWindow):
         
         self.draw_chart()
 
+    def on_table_cell_clicked(self, row, col):
+        if row >= len(self.visible_tasks_info): return
+        if col == 0:
+            info = self.visible_tasks_info[row]
+            t = info['task']
+            if t.get('is_group'):
+                t['collapsed'] = not t.get('collapsed', False)
+                self.update_ui()
+
     def on_table_cell_double_clicked(self, row, col):
-        if col == 3: # Color column
-            t = self.tasks[row]
+        if row >= len(self.visible_tasks_info): return
+        info = self.visible_tasks_info[row]
+        t = info['task']
+        
+        if col == 4: # Color column
             color = QColorDialog.getColor(QColor(t.get('color', '#0078d4')), self, "色を選択")
             if color.isValid():
                 t['color'] = color.name()
                 self.update_ui()
+
 
     def open_settings(self):
         dlg = SettingsDialog(self)
@@ -754,8 +1109,8 @@ class GanttApp(QMainWindow):
         if self.month_label_items:
             self.month_label_items[-1][1] = tw_total
 
-        # 横線 (タスクがある行のみ表示)
-        for r in range(len(self.tasks) + 1):
+        # 横線
+        for r in range(len(self.visible_tasks_info) + 1):
             y = r * self.row_height
             self.cs.addLine(0, y, tw_total, y, QPen(QColor(220, 220, 220), 1)).setZValue(-15)
         
@@ -766,11 +1121,18 @@ class GanttApp(QMainWindow):
         if 0 <= nx < tw_total:
             self.cs.addLine(nx, 0, nx, ch, QPen(QColor(255, 60, 60), 2, Qt.DashLine)).setZValue(25)
             
-        for row, t in enumerate(self.tasks):
+        for row, info in enumerate(self.visible_tasks_info):
+            t = info['task']
             try:
+                if t.get('is_group'):
+                    gs, ge = self.get_group_range(info['index'])
+                    if gs and ge:
+                        group_item = GanttGroupItem(t, row, gs, ge, self)
+                        self.cs.addItem(group_item)
+                    continue
+
                 periods = t.get('periods')
                 if periods is None:
-                    # 互換性維持: periodsが無ければ単一の日付を使用
                     if t.get('start_date') and t.get('end_date'):
                         periods = [{'start_date': t['start_date'], 'end_date': t['end_date']}]
                     else:
@@ -789,7 +1151,7 @@ class GanttApp(QMainWindow):
                     bar.setZValue(30)
                     self.cs.addItem(bar)
             except Exception as e:
-                print(f"Error drawing bar for task {row}: {e}")
+                print(f"Error drawing bar for row {row}: {e}")
                 
         self.hs.setSceneRect(0, 0, tw_total, self.header_height)
         self.cs.setSceneRect(0, 0, tw_total, ch)
