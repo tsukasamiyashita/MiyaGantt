@@ -102,6 +102,7 @@ class SummaryDialog(QDialog):
         self.tabs.addTab(self.weekly_table, "週間集計")
         self.tabs.addTab(self.monthly_table, "月間集計")
         self.tabs.addTab(self.yearly_table, "年間集計")
+        self.tabs.setCurrentIndex(1) # デフォルトを月間集計にする
         
         layout.addWidget(self.tabs)
         
