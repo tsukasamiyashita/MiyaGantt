@@ -624,11 +624,15 @@ class TaskTable(QTableWidget):
 
     def show_header_menu(self, pos):
         menu = QMenu(self)
-        column_names = ["選択マーク", "開閉ボタン", "タスク名", "進捗(%)", "期間指定", "色", "合計日数"]
+        column_names = ["選択マーク", "開閉ボタン", "タスク名", "進捗(%)", "期間指定", "色", "集計"]
         for i, name in enumerate(column_names):
             action = menu.addAction(name)
             action.setCheckable(True)
-            action.setChecked(not self.isColumnHidden(i))
+            if i < 6:
+                action.setChecked(not self.isColumnHidden(i))
+            else:
+                action.setChecked(self.window().summary_visible)
+            
             if i == 2:
                 action.setEnabled(False)
                 
@@ -654,6 +658,8 @@ class GanttApp(QMainWindow):
         self.month_label_items = []
         self.visible_tasks_info = [] # [{index, task, indent}]
         self.custom_holidays = {} # カスタム祝日 { 'YYYY-MM-DD': '祝日名' }
+        self.summary_visible = True
+        self.last_summary_base_key = None
         
         self.init_ui()
         self.apply_styles()
@@ -757,14 +763,13 @@ class GanttApp(QMainWindow):
         self.col_toggle_layout.addStretch()
         self.left_layout.addLayout(self.col_toggle_layout)
 
-        self.table = TaskTable(0, 7)
-        self.table.setHorizontalHeaderLabels(["", "", "タスク名", "進捗(%)", "期間指定", "色", "集計"])
+        self.table = TaskTable(0, 6) # 集計列は update_ui で動的に追加される
+        self.table.setHorizontalHeaderLabels(["", "", "タスク名", "進捗(%)", "期間指定", "色"])
         self.table.setColumnWidth(0, 25)   # マーク
         self.table.setColumnWidth(1, 35)   # 開閉
         self.table.setColumnWidth(3, 60)   # 進捗(%)
         self.table.setColumnWidth(4, 165)  # 期間指定
         self.table.setColumnWidth(5, 40)   # 色
-        self.table.setColumnWidth(6, 90)   # 集計
         self.table.setColumnWidth(2, 200)  # タスク名 (初期幅)
         self.table.horizontalHeader().setFixedHeight(self.header_height)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Interactive)
@@ -816,6 +821,23 @@ class GanttApp(QMainWindow):
     def on_horizontal_scroll(self, v):
         self.hv.horizontalScrollBar().setValue(v)
         self.update_month_labels_pos()
+        
+        # スクロール位置に応じた集計列の同期
+        if self.day_width <= 0: return
+        days_scrolled = v / self.day_width
+        visible_start = self.min_date + timedelta(days=days_scrolled)
+        
+        # 現在の「基準単位」を特定して、変更があった場合のみ更新
+        if self.display_unit == 0: # 週間
+            base_key = (visible_start - timedelta(days=visible_start.weekday())).strftime("%Y-%W")
+        elif self.display_unit == 1: # 月間
+            base_key = visible_start.strftime("%Y-%m")
+        else: # 年間
+            base_key = visible_start.strftime("%Y")
+            
+        if base_key != self.last_summary_base_key:
+            self.last_summary_base_key = base_key
+            self.sync_summary_to_scroll(visible_start)
 
     def update_month_labels_pos(self):
         try:
@@ -850,6 +872,9 @@ class GanttApp(QMainWindow):
     def on_zoom_changed(self, *_):
         self.zoom_unit = self.zoom_unit_combo.currentIndex()
         self.zoom_count = self.zoom_count_spin.value()
+        # ズーム単位を表示単位（集計単位）にも適用する
+        self.display_unit = self.zoom_unit
+        self.update_display_days()
         self.calculate_day_width()
         self.update_ui()
 
@@ -857,10 +882,17 @@ class GanttApp(QMainWindow):
         super().resizeEvent(event)
         if hasattr(self, 'chart_view'):
             self.calculate_day_width()
-            self.draw_chart()
+            self.update_ui()
 
     def update_display_range(self):
+        # ツールバーの状態を更新
+        self.zoom_unit_combo.blockSignals(True)
+        self.zoom_unit_combo.setCurrentIndex(self.display_unit)
+        self.zoom_unit_combo.blockSignals(False)
+        self.zoom_unit = self.display_unit
+        
         self.update_display_days()
+        self.calculate_day_width()
         self.update_ui()
 
     def update_display_days(self):
@@ -1121,11 +1153,94 @@ class GanttApp(QMainWindow):
         if s_dates and e_dates:
             return min(s_dates), max(e_dates)
         return "", ""
+    def get_summary_headers(self, base_date=None, count=None):
+        if base_date is None: base_date = self.min_date
+        if count is None:
+            # 1画面の表示枠（ズーム設定）に合わせて集計列の数を決定する
+            if self.zoom_unit == 0: # 週間
+                visible_days = self.zoom_count * 7
+            elif self.zoom_unit == 1: # 月間
+                visible_days = self.zoom_count * 30.416
+            else: # 年間
+                visible_days = self.zoom_count * 365.25
+                
+            if self.display_unit == 0: # 週間
+                count = max(1, round(visible_days / 7))
+            elif self.display_unit == 1: # 月間
+                count = max(1, round(visible_days / 30.416))
+            else: # 年間
+                count = max(1, round(visible_days / 365.25))
+        
+        headers = []
+        curr = base_date
+        unit_type = ['week', 'month', 'year'][self.display_unit]
+        
+        if unit_type == 'week':
+            # 週の初め（月曜日）に合わせる
+            curr = curr - timedelta(days=curr.weekday())
+            for _ in range(count):
+                end_d = curr + timedelta(days=6)
+                label = f"{curr.strftime('%m/%d')}~{end_d.strftime('%m/%d')}"
+                headers.append((curr, end_d, label))
+                curr += timedelta(days=7)
+        elif unit_type == 'month':
+            curr = curr.replace(day=1)
+            for _ in range(count):
+                last_day = calendar.monthrange(curr.year, curr.month)[1]
+                headers.append((curr, curr.replace(day=last_day), curr.strftime("%Y/%m")))
+                m = curr.month + 1
+                y = curr.year
+                if m > 12: m = 1; y += 1
+                curr = datetime(y, m, 1)
+        elif unit_type == 'year':
+            curr = curr.replace(month=1, day=1)
+            for _ in range(count):
+                headers.append((curr, curr.replace(month=12, day=31), curr.strftime("%Y年")))
+                curr = curr.replace(year=curr.year + 1)
+        return headers
 
-    def get_task_day_map_in_range(self, t, start_idx):
+    def sync_summary_to_scroll(self, base_date):
+        if not hasattr(self, 'table'): return
+        headers = self.get_summary_headers(base_date)
+        
+        self.table.blockSignals(True)
+        # ヘッダーラベルの更新
+        labels = ["", "", "タスク名", "進捗(%)", "期間指定", "色"] + [h[2] for h in headers]
+        # 現在の列数と合わない場合は調整（通常は update_ui で調整済み）
+        if self.table.columnCount() != len(labels):
+            self.table.setColumnCount(len(labels))
+        self.table.setHorizontalHeaderLabels(labels)
+        
+        # 各行の集計値を更新
+        for r, info in enumerate(self.visible_tasks_info):
+            t = info['task']
+            for i, (h_start, h_end, _) in enumerate(headers):
+                col_idx = 6 + i
+                item_s = self.table.item(r, col_idx)
+                if not item_s:
+                    item_s = QTableWidgetItem()
+                    self.table.setItem(r, col_idx, item_s)
+                
+                item_s.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+                item_s.setTextAlignment(Qt.AlignCenter)
+                day_map = self.get_task_day_map_in_range(t, info['index'], h_start, h_end)
+                item_s.setText(self.format_total_days(day_map))
+                
+                if t.get('is_group'):
+                    item_s.setBackground(QColor(242, 242, 242))
+                else:
+                    item_s.setBackground(QColor(255, 255, 255))
+                
+                if self.summary_visible:
+                    self.table.setColumnWidth(col_idx, 90)
+                self.table.setColumnHidden(col_idx, not self.summary_visible)
+                
+        self.table.blockSignals(False)
+
+    def get_task_day_map_in_range(self, t, start_idx, timeline_start=None, timeline_end=None):
         day_map = {}
-        timeline_start = self.min_date
-        timeline_end = self.min_date + timedelta(days=self.display_days - 1)
+        if timeline_start is None: timeline_start = self.min_date
+        if timeline_end is None: timeline_end = self.min_date + timedelta(days=self.display_days - 1)
         
         tasks_to_sum = [t]
         if t.get('is_group'):
@@ -1150,9 +1265,18 @@ class GanttApp(QMainWindow):
 
     def sync_table_from_tasks(self):
         self.table.blockSignals(True)
+        headers = self.get_summary_headers()
         for r, info in enumerate(self.visible_tasks_info):
             t = info['task']
-            if t.get('is_group'): continue
+            if t.get('is_group'):
+                # グループの場合も集計を更新
+                for i, (h_start, h_end, _) in enumerate(headers):
+                    col_idx = 6 + i
+                    item_s = self.table.item(r, col_idx)
+                    if item_s:
+                        day_map = self.get_task_day_map_in_range(t, info['index'], h_start, h_end)
+                        item_s.setText(self.format_total_days(day_map))
+                continue
             
             periods = t.get('periods', [])
             p_strs = []
@@ -1166,12 +1290,13 @@ class GanttApp(QMainWindow):
             if period_item:
                 period_item.setText(", ".join(p_strs))
             
-            # 集計（表示範囲内の合計日数）の更新
-            day_map = self.get_task_day_map_in_range(t, info['index'])
-            
-            days_item = self.table.item(r, 6)
-            if days_item:
-                days_item.setText(self.format_total_days(day_map))
+            # 動的な集計列の更新
+            for i, (h_start, h_end, _) in enumerate(headers):
+                col_idx = 6 + i
+                item_s = self.table.item(r, col_idx)
+                if item_s:
+                    day_map = self.get_task_day_map_in_range(t, info['index'], h_start, h_end)
+                    item_s.setText(self.format_total_days(day_map))
         self.table.blockSignals(False)
 
     def create_task_from_drag(self, x1, x2, y):
@@ -1200,6 +1325,19 @@ class GanttApp(QMainWindow):
         self.visible_tasks_info = self.get_visible_tasks_info()
         self.table.blockSignals(True)
         
+        # 現在のスクロール位置から表示基準日を計算
+        scroll_val = self.chart_view.horizontalScrollBar().value()
+        days_scrolled = scroll_val / self.day_width if self.day_width > 0 else 0
+        visible_start = self.min_date + timedelta(days=days_scrolled)
+        
+        headers = self.get_summary_headers(visible_start)
+        base_col_count = 6
+        total_cols = base_col_count + len(headers)
+        self.table.setColumnCount(total_cols)
+        
+        labels = ["", "", "タスク名", "進捗(%)", "期間指定", "色"] + [h[2] for h in headers]
+        self.table.setHorizontalHeaderLabels(labels)
+        
         new_rows = len(self.visible_tasks_info)
         if self.table.rowCount() < new_rows:
             self.table.setRowCount(new_rows)
@@ -1210,7 +1348,7 @@ class GanttApp(QMainWindow):
             is_group = t.get('is_group', False)
             
             # セルが存在しない場合のみ生成する
-            for c in range(7):
+            for c in range(total_cols):
                 if self.table.item(r, c) is None:
                     self.table.setItem(r, c, QTableWidgetItem())
             
@@ -1265,13 +1403,6 @@ class GanttApp(QMainWindow):
             item_color.setForeground(QColor(51, 51, 51))
             item_color.setBackground(QColor(255, 255, 255))
             
-            # 6: Total Days
-            item_days = self.table.item(r, 6)
-            item_days.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
-            item_days.setForeground(QColor(51, 51, 51))
-            item_days.setTextAlignment(Qt.AlignCenter)
-            item_days.setBackground(QColor(255, 255, 255))
-
             if is_group:
                 item_prog.setText("")
                 item_prog.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
@@ -1280,11 +1411,6 @@ class GanttApp(QMainWindow):
                 item_color.setText("")
                 item_color.setBackground(QColor(200, 200, 200))
                 item_color.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
-                item_days.setBackground(QColor(242, 242, 242))
-                
-                # 集計（表示範囲内の合計日数）の計算
-                day_map = self.get_task_day_map_in_range(t, info['index'])
-                item_days.setText(self.format_total_days(day_map))
             else:
                 item_prog.setText(str(t.get('progress', 0)))
                 item_prog.setTextAlignment(Qt.AlignCenter)
@@ -1301,15 +1427,35 @@ class GanttApp(QMainWindow):
                 item_color.setText("")
                 item_color.setBackground(QColor(t.get('color', '#0078d4')))
                 item_color.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+
+            # 6 onwards: Dynamic Summary Columns
+            for i, (h_start, h_end, _) in enumerate(headers):
+                col_idx = 6 + i
+                item_s = self.table.item(r, col_idx)
+                item_s.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+                item_s.setForeground(QColor(51, 51, 51))
+                item_s.setTextAlignment(Qt.AlignCenter)
                 
-                # 集計（表示範囲内の合計日数）の計算
-                day_map = self.get_task_day_map_in_range(t, info['index'])
-                item_days.setText(self.format_total_days(day_map))
+                day_map = self.get_task_day_map_in_range(t, info['index'], h_start, h_end)
+                item_s.setText(self.format_total_days(day_map))
+                
+                if is_group:
+                    item_s.setBackground(QColor(242, 242, 242))
+                else:
+                    item_s.setBackground(QColor(255, 255, 255))
                 
         # 余分な行を削除
         if self.table.rowCount() > new_rows:
             self.table.setRowCount(new_rows)
             
+        # 集計列の表示・非表示を一括反映
+        for i in range(base_col_count, total_cols):
+            self.table.setColumnHidden(i, not self.summary_visible)
+            if self.summary_visible:
+                # 幅を自動調整するか固定にするか
+                # コンテンツに合わせて調整すると重くなる可能性があるので、一旦固定または交互に
+                self.table.setColumnWidth(i, 90)
+
         self.update_selection_mark()
         self.table.blockSignals(False)
         if refresh_chart:
@@ -1613,7 +1759,14 @@ class GanttApp(QMainWindow):
         return f"計{total}日 ({', '.join(parts)})"
 
     def toggle_column_visibility(self, idx, visible):
-        self.table.setColumnHidden(idx, not visible)
+        if idx < 6:
+            self.table.setColumnHidden(idx, not visible)
+        else:
+            self.summary_visible = visible
+            # 6列目以降の全列をトグル
+            for i in range(6, self.table.columnCount()):
+                self.table.setColumnHidden(i, not visible)
+        
         if idx in self.col_actions:
             self.col_actions[idx].blockSignals(True)
             self.col_actions[idx].setChecked(visible)
