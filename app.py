@@ -758,13 +758,13 @@ class GanttApp(QMainWindow):
         self.left_layout.addLayout(self.col_toggle_layout)
 
         self.table = TaskTable(0, 7)
-        self.table.setHorizontalHeaderLabels(["", "", "タスク名", "進捗(%)", "期間指定", "色", "合計日数"])
+        self.table.setHorizontalHeaderLabels(["", "", "タスク名", "進捗(%)", "期間指定", "色", "集計"])
         self.table.setColumnWidth(0, 25)   # マーク
         self.table.setColumnWidth(1, 35)   # 開閉
         self.table.setColumnWidth(3, 60)   # 進捗(%)
         self.table.setColumnWidth(4, 165)  # 期間指定
         self.table.setColumnWidth(5, 40)   # 色
-        self.table.setColumnWidth(6, 90)   # 合計日数
+        self.table.setColumnWidth(6, 90)   # 集計
         self.table.setColumnWidth(2, 200)  # タスク名 (初期幅)
         self.table.horizontalHeader().setFixedHeight(self.header_height)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Interactive)
@@ -1122,6 +1122,32 @@ class GanttApp(QMainWindow):
             return min(s_dates), max(e_dates)
         return "", ""
 
+    def get_task_day_map_in_range(self, t, start_idx):
+        day_map = {}
+        timeline_start = self.min_date
+        timeline_end = self.min_date + timedelta(days=self.display_days - 1)
+        
+        tasks_to_sum = [t]
+        if t.get('is_group'):
+            tasks_to_sum = []
+            for i in range(start_idx + 1, len(self.tasks)):
+                if self.tasks[i].get('is_group'): break
+                tasks_to_sum.append(self.tasks[i])
+        
+        for task in tasks_to_sum:
+            for p in task.get('periods', []):
+                if not p.get('start_date') or not p.get('end_date'): continue
+                try:
+                    psd = datetime.strptime(p['start_date'], "%Y-%m-%d")
+                    ped = datetime.strptime(p['end_date'], "%Y-%m-%d")
+                    overlap = (min(ped, timeline_end) - max(psd, timeline_start)).days + 1
+                    if overlap > 0:
+                        color = p.get('color', task.get('color', '#0078d4'))
+                        day_map[color] = day_map.get(color, 0) + overlap
+                except ValueError:
+                    continue
+        return day_map
+
     def sync_table_from_tasks(self):
         self.table.blockSignals(True)
         for r, info in enumerate(self.visible_tasks_info):
@@ -1140,27 +1166,8 @@ class GanttApp(QMainWindow):
             if period_item:
                 period_item.setText(", ".join(p_strs))
             
-            # 合計日数の更新 (色別集計)
-            day_map = {} # color -> days
-            if t.get('is_group'):
-                for i in range(info['index'] + 1, len(self.tasks)):
-                    sub_t = self.tasks[i]
-                    if sub_t.get('is_group'): break
-                    for p in sub_t.get('periods', []):
-                        if p.get('start_date') and p.get('end_date'):
-                            psd = datetime.strptime(p['start_date'], "%Y-%m-%d")
-                            ped = datetime.strptime(p['end_date'], "%Y-%m-%d")
-                            days = (ped - psd).days + 1
-                            color = p.get('color', sub_t.get('color', '#0078d4'))
-                            day_map[color] = day_map.get(color, 0) + days
-            else:
-                for p in t.get('periods', []):
-                    if p.get('start_date') and p.get('end_date'):
-                        psd = datetime.strptime(p['start_date'], "%Y-%m-%d")
-                        ped = datetime.strptime(p['end_date'], "%Y-%m-%d")
-                        days = (ped - psd).days + 1
-                        color = p.get('color', t.get('color', '#0078d4'))
-                        day_map[color] = day_map.get(color, 0) + days
+            # 集計（表示範囲内の合計日数）の更新
+            day_map = self.get_task_day_map_in_range(t, info['index'])
             
             days_item = self.table.item(r, 6)
             if days_item:
@@ -1275,18 +1282,8 @@ class GanttApp(QMainWindow):
                 item_color.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                 item_days.setBackground(QColor(242, 242, 242))
                 
-                # 合計日数の計算 (色別集計)
-                day_map = {}
-                for i in range(info['index'] + 1, len(self.tasks)):
-                    sub_t = self.tasks[i]
-                    if sub_t.get('is_group'): break
-                    for p in sub_t.get('periods', []):
-                        if p.get('start_date') and p.get('end_date'):
-                            psd = datetime.strptime(p['start_date'], "%Y-%m-%d")
-                            ped = datetime.strptime(p['end_date'], "%Y-%m-%d")
-                            days = (ped - psd).days + 1
-                            color = p.get('color', sub_t.get('color', '#0078d4'))
-                            day_map[color] = day_map.get(color, 0) + days
+                # 集計（表示範囲内の合計日数）の計算
+                day_map = self.get_task_day_map_in_range(t, info['index'])
                 item_days.setText(self.format_total_days(day_map))
             else:
                 item_prog.setText(str(t.get('progress', 0)))
@@ -1294,15 +1291,8 @@ class GanttApp(QMainWindow):
                 
                 periods = t.get('periods', [])
                 p_strs = []
-                day_map = {}
                 for p in periods:
                     if not p.get('start_date') or not p.get('end_date'): continue
-                    psd = datetime.strptime(p['start_date'], "%Y-%m-%d")
-                    ped = datetime.strptime(p['end_date'], "%Y-%m-%d")
-                    days = (ped - psd).days + 1
-                    color = p.get('color', t.get('color', '#0078d4'))
-                    day_map[color] = day_map.get(color, 0) + days
-                    
                     s = p['start_date'].replace('-', '/')
                     e = p['end_date'].replace('-', '/')
                     p_strs.append(f"{s}-{e}")
@@ -1312,6 +1302,8 @@ class GanttApp(QMainWindow):
                 item_color.setBackground(QColor(t.get('color', '#0078d4')))
                 item_color.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                 
+                # 集計（表示範囲内の合計日数）の計算
+                day_map = self.get_task_day_map_in_range(t, info['index'])
                 item_days.setText(self.format_total_days(day_map))
                 
         # 余分な行を削除
