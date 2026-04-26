@@ -698,6 +698,8 @@ class GanttApp(QMainWindow):
         self.max_date = self.min_date + timedelta(days=180) # 初期範囲
         self.last_path = ""
         
+        self.setWindowIcon(QIcon(self.get_icon_path()))
+        
         self.init_ui()
         self.apply_styles()
 
@@ -1616,6 +1618,11 @@ class GanttApp(QMainWindow):
     def open_help(self):
         dlg = HelpDialog(self)
         dlg.exec()
+
+    def get_icon_path(self):
+        if hasattr(sys, '_MEIPASS'):
+            return os.path.join(sys._MEIPASS, 'icon.ico')
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), 'icon.ico')
 
     def draw_chart(self):
         self.month_label_items = []
