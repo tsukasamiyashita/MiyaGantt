@@ -1,4 +1,5 @@
 import sys
+import os
 import json
 import calendar
 from datetime import datetime, timedelta
@@ -717,17 +718,20 @@ class GanttApp(QMainWindow):
         self.btn_settings = QPushButton("⚙ 編集期間")
         self.btn_summary = QPushButton("📊 集計")
         self.btn_today = QPushButton("📅 今日")
+        self.btn_save_config = QPushButton("💾 設定保存")
         self.btn_load.clicked.connect(self.load_data)
         self.btn_save.clicked.connect(self.save_data)
         self.btn_settings.clicked.connect(self.open_settings)
         self.btn_summary.clicked.connect(self.open_summary)
         self.btn_today.clicked.connect(self.scroll_to_today)
+        self.btn_save_config.clicked.connect(self.save_app_config)
         
         tl.addWidget(self.btn_load)
         tl.addWidget(self.btn_save)
         tl.addWidget(self.btn_settings)
         tl.addWidget(self.btn_summary)
         tl.addWidget(self.btn_today)
+        tl.addWidget(self.btn_save_config)
         tl.addStretch()
         
         ml.addLayout(tl)
@@ -816,6 +820,8 @@ class GanttApp(QMainWindow):
         rcl.addWidget(self.chart_view)
         self.splitter.addWidget(rc)
         self.splitter.setSizes([450, 930])
+        
+        self.load_app_config()
         
         self.chart_view.horizontalScrollBar().valueChanged.connect(self.on_horizontal_scroll)
         self.table.verticalScrollBar().valueChanged.connect(self.chart_view.verticalScrollBar().setValue)
@@ -1810,6 +1816,69 @@ class GanttApp(QMainWindow):
             self.col_actions[idx].blockSignals(True)
             self.col_actions[idx].setChecked(visible)
             self.col_actions[idx].blockSignals(False)
+
+    def save_app_config(self):
+        config_dir = os.path.join(os.environ.get('USERPROFILE', os.path.expanduser('~')), 'MiyaGantt')
+        if not os.path.exists(config_dir):
+            try:
+                os.makedirs(config_dir)
+            except Exception as e:
+                QMessageBox.warning(self, "エラー", f"フォルダの作成に失敗しました: {e}")
+                return
+        
+        path = os.path.join(config_dir, 'config.json')
+        
+        column_visibility = {}
+        for i in range(7):
+            column_visibility[str(i)] = not self.table.isColumnHidden(i)
+        
+        config = {
+            "zoom_unit": self.zoom_unit,
+            "zoom_count": self.zoom_count,
+            "display_unit": self.display_unit,
+            "display_count": self.display_count,
+            "summary_visible": self.summary_visible,
+            "column_visibility": column_visibility
+        }
+        
+        try:
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(config, f, ensure_ascii=False, indent=4)
+            QMessageBox.information(self, "完了", f"基本設定を保存しました:\n{path}")
+        except Exception as e:
+            QMessageBox.warning(self, "エラー", f"設定の保存に失敗しました: {e}")
+
+    def load_app_config(self):
+        config_dir = os.path.join(os.environ.get('USERPROFILE', os.path.expanduser('~')), 'MiyaGantt')
+        path = os.path.join(config_dir, 'config.json')
+        if not os.path.exists(path): return
+        
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            
+            self.zoom_unit = config.get("zoom_unit", self.zoom_unit)
+            self.zoom_count = config.get("zoom_count", self.zoom_count)
+            self.display_unit = config.get("display_unit", self.display_unit)
+            self.display_count = config.get("display_count", self.display_count)
+            self.summary_visible = config.get("summary_visible", self.summary_visible)
+            
+            # UI部品への反映
+            if hasattr(self, 'zoom_unit_combo'):
+                self.zoom_unit_combo.blockSignals(True)
+                self.zoom_unit_combo.setCurrentIndex(self.zoom_unit)
+                self.zoom_unit_combo.blockSignals(False)
+            if hasattr(self, 'zoom_count_spin'):
+                self.zoom_count_spin.blockSignals(True)
+                self.zoom_count_spin.setValue(self.zoom_count)
+                self.zoom_count_spin.blockSignals(False)
+            
+            # 列の表示非表示
+            col_vis = config.get("column_visibility", {})
+            for idx_str, visible in col_vis.items():
+                self.toggle_column_visibility(int(idx_str), visible)
+        except Exception as e:
+            print(f"Config load error: {e}")
 
     def load_data(self):
         p = QFileDialog.getOpenFileName(self, "開く", "", "JSON (*.json)")[0]
