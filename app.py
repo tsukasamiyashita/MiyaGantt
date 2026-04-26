@@ -1614,11 +1614,8 @@ class GanttApp(QMainWindow):
             
             if self.day_width >= 35:
                 dl = self.hs.addText(d.strftime("%d"))
-                # カスタム祝日はディープピンク、公的祝日は黒、平日は黒
-                if is_custom:
-                    day_color = QColor(255, 20, 147)
-                else:
-                    day_color = QColor(50, 50, 50)
+                # 日付数字の色（すべて一律で黒系にする）
+                day_color = QColor(50, 50, 50)
                 
                 dl.setDefaultTextColor(day_color)
                 dl.setFont(QFont("Segoe UI", 9, QFont.Bold))
@@ -1626,9 +1623,7 @@ class GanttApp(QMainWindow):
                 dl.setZValue(10)
                 
                 # 曜日の色
-                if is_custom:
-                    w_c = QColor(255, 20, 147)
-                elif d.weekday() == 5 and not is_public: # 土曜日
+                if d.weekday() == 5 and not is_public: # 土曜日
                     w_c = QColor(0, 80, 200)
                 elif d.weekday() == 6 or is_public: # 日曜または公的祝日
                     w_c = QColor(220, 0, 0)
