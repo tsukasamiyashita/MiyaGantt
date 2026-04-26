@@ -30,7 +30,7 @@ jobs:
         --noconsole 
         --clean 
         --name "MiyaGantt-v1.0.0" 
-        --add-data "README.MD;."
+        --add-data "README.md;."
         --collect-all PySide6
         --hidden-import jpholiday
         app.py

@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                QHBoxLayout, QPushButton, QTableWidget, QTableWidgetItem, 
                                QHeaderView, QSplitter, QGraphicsView, QGraphicsScene, 
                                QDialog, QFormLayout, QLineEdit, QDateEdit, QMessageBox, 
-                               QFileDialog, QGraphicsRectItem, QGraphicsTextItem, QSlider, QLabel, QMenu, QSpinBox, QColorDialog, QComboBox, QInputDialog, QAbstractItemView, QScrollArea, QGridLayout, QTabWidget)
+                               QFileDialog, QGraphicsRectItem, QGraphicsTextItem, QSlider, QLabel, QMenu, QSpinBox, QColorDialog, QComboBox, QInputDialog, QAbstractItemView, QScrollArea, QGridLayout, QTabWidget, QTextBrowser)
 from PySide6.QtCore import Qt, QDate, QRectF, QPointF, QTimer
 from PySide6.QtGui import QBrush, QPen, QColor, QFont, QPainter, QPainterPath, QPixmap, QIcon, QCursor
 
@@ -224,6 +224,41 @@ class SummaryDialog(QDialog):
             table.setItem(total_row_idx, c + 1, item)
         
         table.resizeColumnsToContents()
+
+class HelpDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("ヘルプ - MiyaGantt")
+        self.resize(850, 650)
+        layout = QVBoxLayout(self)
+        
+        self.browser = QTextBrowser()
+        self.browser.setOpenExternalLinks(True) # リンクをブラウザで開けるようにする
+        
+        # README.md を読み込む
+        readme_path = self.get_readme_path()
+        if os.path.exists(readme_path):
+            try:
+                with open(readme_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                self.browser.setMarkdown(content)
+            except Exception as e:
+                self.browser.setText(f"README.md の読み込みに失敗しました: {e}")
+        else:
+            self.browser.setText(f"README.md が見つかりませんでした。\n検索パス: {readme_path}")
+            
+        layout.addWidget(self.browser)
+        
+        btn_close = QPushButton("閉じる")
+        btn_close.clicked.connect(self.accept)
+        layout.addWidget(btn_close)
+
+    def get_readme_path(self):
+        if hasattr(sys, '_MEIPASS'):
+            # PyInstallerでパッケージ化された場合
+            return os.path.join(sys._MEIPASS, 'README.md')
+        # ソースから実行された場合
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), 'README.md')
 
 class GanttBarItem(QGraphicsRectItem):
     def __init__(self, task, row, period_index, gantt_app, rect=None):
@@ -720,12 +755,14 @@ class GanttApp(QMainWindow):
         self.btn_summary = QPushButton("📊 集計")
         self.btn_today = QPushButton("📅 今日")
         self.btn_save_config = QPushButton("💾 設定保存")
+        self.btn_help = QPushButton("❓ ヘルプ")
         self.btn_load.clicked.connect(self.load_data)
         self.btn_save.clicked.connect(self.save_data)
         self.btn_settings.clicked.connect(self.open_settings)
         self.btn_summary.clicked.connect(self.open_summary)
         self.btn_today.clicked.connect(self.scroll_to_today)
         self.btn_save_config.clicked.connect(self.save_app_config)
+        self.btn_help.clicked.connect(self.open_help)
         
         tl.addWidget(self.btn_load)
         tl.addWidget(self.btn_save)
@@ -733,6 +770,7 @@ class GanttApp(QMainWindow):
         tl.addWidget(self.btn_summary)
         tl.addWidget(self.btn_today)
         tl.addWidget(self.btn_save_config)
+        tl.addWidget(self.btn_help)
         tl.addStretch()
         
         ml.addLayout(tl)
@@ -1573,6 +1611,10 @@ class GanttApp(QMainWindow):
 
     def open_summary(self):
         dlg = SummaryDialog(self, self.tasks, self)
+        dlg.exec()
+
+    def open_help(self):
+        dlg = HelpDialog(self)
         dlg.exec()
 
     def draw_chart(self):
