@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                QHBoxLayout, QPushButton, QTableWidget, QTableWidgetItem, 
                                QHeaderView, QSplitter, QGraphicsView, QGraphicsScene, 
                                QDialog, QFormLayout, QLineEdit, QDateEdit, QMessageBox, 
-                               QFileDialog, QGraphicsRectItem, QGraphicsTextItem, QSlider, QLabel, QMenu, QSpinBox, QColorDialog, QComboBox, QInputDialog, QAbstractItemView, QScrollArea, QGridLayout)
+                               QFileDialog, QGraphicsRectItem, QGraphicsTextItem, QSlider, QLabel, QMenu, QSpinBox, QColorDialog, QComboBox, QInputDialog, QAbstractItemView, QScrollArea, QGridLayout, QTabWidget)
 from PySide6.QtCore import Qt, QDate, QRectF, QPointF, QTimer
 from PySide6.QtGui import QBrush, QPen, QColor, QFont, QPainter, QPainterPath, QPixmap, QIcon, QCursor
 
@@ -78,6 +78,151 @@ class ColorGridDialog(QDialog):
     def select_color(self, color):
         self.selected_color = color
         self.accept()
+
+class SummaryDialog(QDialog):
+    def __init__(self, app, tasks, parent=None):
+        super().__init__(parent)
+        self.app = app
+        self.setWindowTitle("グループ別集計レポート")
+        self.resize(1000, 600)
+        self.tasks = tasks
+        
+        layout = QVBoxLayout(self)
+        self.tabs = QTabWidget(self)
+        
+        self.weekly_table = QTableWidget()
+        self.monthly_table = QTableWidget()
+        self.yearly_table = QTableWidget()
+        
+        for table in [self.weekly_table, self.monthly_table, self.yearly_table]:
+            table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+            table.setAlternatingRowColors(True)
+            table.setStyleSheet("QTableWidget { background-color: #ffffff; gridline-color: #e0e0e0; }")
+        
+        self.tabs.addTab(self.weekly_table, "週間集計")
+        self.tabs.addTab(self.monthly_table, "月間集計")
+        self.tabs.addTab(self.yearly_table, "年間集計")
+        
+        layout.addWidget(self.tabs)
+        
+        close_btn = QPushButton("閉じる")
+        close_btn.clicked.connect(self.accept)
+        layout.addWidget(close_btn)
+        
+        self.refresh_data()
+
+    def refresh_data(self):
+        group_data = []
+        current_group_list = []
+        current_group_name = "未分類"
+        
+        for t in self.tasks:
+            if t.get('is_group'):
+                if current_group_list:
+                    group_data.append({'name': current_group_name, 'tasks': current_group_list})
+                current_group_name = t.get('name', '無題グループ')
+                current_group_list = []
+            else:
+                current_group_list.append(t)
+        
+        if current_group_list:
+            group_data.append({'name': current_group_name, 'tasks': current_group_list})
+            
+        if not group_data:
+            return
+
+        all_dates = []
+        for g in group_data:
+            for t in g['tasks']:
+                for p in t.get('periods', []):
+                    if p.get('start_date'): all_dates.append(datetime.strptime(p['start_date'], "%Y-%m-%d"))
+                    if p.get('end_date'): all_dates.append(datetime.strptime(p['end_date'], "%Y-%m-%d"))
+        
+        if not all_dates:
+            start_range = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            end_range = start_range + timedelta(days=30)
+        else:
+            start_range = min(all_dates)
+            end_range = max(all_dates)
+
+        self.fill_table(self.weekly_table, group_data, start_range, end_range, 'week')
+        self.fill_table(self.monthly_table, group_data, start_range, end_range, 'month')
+        self.fill_table(self.yearly_table, group_data, start_range, end_range, 'year')
+
+    def fill_table(self, table, group_data, start_range, end_range, unit):
+        headers = []
+        curr = start_range
+        if unit == 'week':
+            curr = curr - timedelta(days=curr.weekday())
+            while curr <= end_range:
+                headers.append((curr, curr + timedelta(days=6), curr.strftime("%m/%d~")))
+                curr += timedelta(days=7)
+        elif unit == 'month':
+            curr = curr.replace(day=1)
+            while curr <= end_range:
+                last_day = calendar.monthrange(curr.year, curr.month)[1]
+                headers.append((curr, curr.replace(day=last_day), curr.strftime("%Y/%m")))
+                m = curr.month + 1
+                y = curr.year
+                if m > 12: m = 1; y += 1
+                curr = datetime(y, m, 1)
+        elif unit == 'year':
+            curr = curr.replace(month=1, day=1)
+            while curr <= end_range:
+                headers.append((curr, curr.replace(month=12, day=31), curr.strftime("%Y年")))
+                curr = curr.replace(year=curr.year + 1)
+
+        table.setColumnCount(len(headers) + 1)
+        table.setRowCount(len(group_data) + 1)
+        table.setHorizontalHeaderLabels(["グループ名"] + [h[2] for h in headers])
+        
+        # 期間ごとの全グループ合計を保持するリスト
+        total_period_maps = [{} for _ in range(len(headers))]
+        
+        for r, g in enumerate(group_data):
+            table.setItem(r, 0, QTableWidgetItem(g['name']))
+            for c, (h_start, h_end, label) in enumerate(headers):
+                color_map = {}
+                for t in g['tasks']:
+                    for p in t.get('periods', []):
+                        if not p.get('start_date') or not p.get('end_date'): continue
+                        psd = datetime.strptime(p['start_date'], "%Y-%m-%d")
+                        ped = datetime.strptime(p['end_date'], "%Y-%m-%d")
+                        overlap = (min(ped, h_end) - max(psd, h_start)).days + 1
+                        if overlap > 0:
+                            c_code = p.get('color', t.get('color', '#0078d4'))
+                            color_map[c_code] = color_map.get(c_code, 0) + overlap
+                            # 全体合計に加算
+                            total_period_maps[c][c_code] = total_period_maps[c].get(c_code, 0) + overlap
+                
+                if not color_map:
+                    item = QTableWidgetItem("-")
+                else:
+                    text = self.app.format_total_days(color_map)
+                    item = QTableWidgetItem(text)
+                
+                item.setTextAlignment(Qt.AlignCenter)
+                if color_map:
+                    item.setForeground(QColor(0, 120, 212))
+                    f = item.font(); f.setBold(True); item.setFont(f)
+                table.setItem(r, c + 1, item)
+        
+        # 全体合計行の作成
+        total_row_idx = len(group_data)
+        total_label_item = QTableWidgetItem("全体合計")
+        total_label_item.setBackground(QColor(240, 248, 255))
+        f = total_label_item.font(); f.setBold(True); total_label_item.setFont(f)
+        table.setItem(total_row_idx, 0, total_label_item)
+        
+        for c, color_map in enumerate(total_period_maps):
+            text = self.app.format_total_days(color_map) if color_map else "-"
+            item = QTableWidgetItem(text)
+            item.setTextAlignment(Qt.AlignCenter)
+            item.setBackground(QColor(240, 248, 255))
+            f = item.font(); f.setBold(True); item.setFont(f)
+            table.setItem(total_row_idx, c + 1, item)
+        
+        table.resizeColumnsToContents()
 
 class GanttBarItem(QGraphicsRectItem):
     def __init__(self, task, row, period_index, gantt_app, rect=None):
@@ -563,13 +708,16 @@ class GanttApp(QMainWindow):
         self.btn_load = QPushButton("読込")
         self.btn_save = QPushButton("保存")
         self.btn_settings = QPushButton("⚙ 表示設定")
+        self.btn_summary = QPushButton("📊 集計")
         self.btn_load.clicked.connect(self.load_data)
         self.btn_save.clicked.connect(self.save_data)
         self.btn_settings.clicked.connect(self.open_settings)
+        self.btn_summary.clicked.connect(self.open_summary)
         
         tl.addWidget(self.btn_load)
         tl.addWidget(self.btn_save)
         tl.addWidget(self.btn_settings)
+        tl.addWidget(self.btn_summary)
         tl.addStretch()
         
         ml.addLayout(tl)
@@ -1239,6 +1387,10 @@ class GanttApp(QMainWindow):
             
             self.update_display_range()
 
+    def open_summary(self):
+        dlg = SummaryDialog(self, self.tasks, self)
+        dlg.exec()
+
     def draw_chart(self):
         self.month_label_items = []
         self.hs.clear()
@@ -1455,14 +1607,17 @@ class GanttApp(QMainWindow):
 
     def format_total_days(self, day_map):
         if not day_map: return "0日"
-        if len(day_map) == 1:
-            return f"{list(day_map.values())[0]}日"
+        total = sum(day_map.values())
+        if len(day_map) <= 1:
+            return f"{total}日"
         
         parts = []
-        for code, days in day_map.items():
+        # 色コードでソートして順序を固定
+        for code in sorted(day_map.keys()):
+            days = day_map[code]
             name = self.get_color_name(code)
-            parts.append(f"{name}: {days}日")
-        return ", ".join(parts)
+            parts.append(f"{name}:{days}")
+        return f"計{total}日 ({', '.join(parts)})"
 
     def toggle_column_visibility(self, idx, visible):
         self.table.setColumnHidden(idx, not visible)
