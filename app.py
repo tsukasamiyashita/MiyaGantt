@@ -430,33 +430,11 @@ class HideableHeader(QHeaderView):
         self.btn_size = 16
         
     def paintSection(self, painter, rect, logicalIndex):
+        # 目玉アイコンなどのカスタム描画を削除し、標準のヘッダー表示に戻す
         super().paintSection(painter, rect, logicalIndex)
-        if logicalIndex != 2:
-            painter.save()
-            painter.setRenderHint(QPainter.Antialiasing)
-            
-            # ボタンの領域（右端）
-            br = QRectF(rect.right() - self.btn_size - 6, rect.top() + (rect.height() - self.btn_size)/2, self.btn_size, self.btn_size)
-            
-            # 目玉アイコン（表示/非表示の象徴）を描画
-            painter.setPen(QPen(QColor(100, 100, 100), 1.2))
-            # 輪郭（楕円）
-            painter.drawEllipse(br.adjusted(2, 4, -2, -4))
-            # 瞳
-            painter.setBrush(QBrush(QColor(100, 100, 100)))
-            painter.drawEllipse(br.adjusted(6, 6, -6, -6))
-            
-            painter.restore()
 
     def mouseReleaseEvent(self, e):
-        logicalIndex = self.logicalIndexAt(e.position().toPoint())
-        if logicalIndex != -1 and logicalIndex != 2:
-            rect = QRectF(self.sectionViewportPosition(logicalIndex), 0, self.sectionSize(logicalIndex), self.height())
-            br = QRectF(rect.right() - self.btn_size - 10, 0, self.btn_size + 10, self.height())
-            if br.contains(e.position().toPoint()):
-                # GanttAppのメソッドを直接呼び出す
-                self.window().toggle_column_visibility(logicalIndex, False)
-                return
+        # カスタムボタンを削除したため、標準のイベント処理のみ行う
         super().mouseReleaseEvent(e)
 
 class TaskTable(QTableWidget):
@@ -566,35 +544,42 @@ class GanttApp(QMainWindow):
         tl.addWidget(self.btn_settings)
         tl.addStretch()
         
-        # 列表示切り替えボタン群 (アイ・コントロールバー)
-        self.col_actions = {}
-        col_info = [
-            (0, "マーク"), (1, "開閉"), (3, "進捗"), 
-            (4, "期間"), (5, "色"), (6, "合計")
-        ]
-        
-        # 表示コントロール用のコンテナ
-        tl.addWidget(QLabel("  表示設定:"))
-        for idx, name in col_info:
-            btn = QPushButton(f"👁 {name}")
-            btn.setCheckable(True)
-            btn.setChecked(True)
-            btn.setFixedWidth(75)
-            # スタイル設定: チェック状態で色を変える
-            btn.setStyleSheet("""
-                QPushButton { background-color: #f0f0f0; border: 1px solid #ccc; border-radius: 4px; padding: 2px; }
-                QPushButton:checked { background-color: #e1f0ff; border: 1px solid #0078d4; color: #0078d4; font-weight: bold; }
-                QPushButton:hover { background-color: #e5e5e5; }
-            """)
-            btn.clicked.connect(lambda checked, i=idx: self.toggle_column_visibility(i, checked))
-            self.col_actions[idx] = btn
-            tl.addWidget(btn)
-        
         ml.addLayout(tl)
         
         self.splitter = QSplitter(Qt.Horizontal)
         ml.addWidget(self.splitter)
         
+        # テーブル側のコンテナ (ボタン + テーブル)
+        self.left_container = QWidget()
+        self.left_layout = QVBoxLayout(self.left_container)
+        self.left_layout.setContentsMargins(0, 0, 0, 0)
+        self.left_layout.setSpacing(2)
+        
+        # 列表示切り替えボタン群 (ヘッダーのすぐ上に配置)
+        self.col_toggle_layout = QHBoxLayout()
+        self.col_toggle_layout.setContentsMargins(2, 2, 2, 2)
+        self.col_toggle_layout.setSpacing(2)
+        self.col_actions = {}
+        col_info = [
+            (0, "マーク"), (1, "開閉"), (3, "進捗"), 
+            (4, "期間"), (5, "色"), (6, "合計")
+        ]
+        for idx, name in col_info:
+            btn = QPushButton(name) # 👁 を削除
+            btn.setCheckable(True)
+            btn.setChecked(True)
+            btn.setFixedHeight(24)
+            btn.setStyleSheet("""
+                QPushButton { background-color: #f8f8f8; border: 1px solid #ddd; border-radius: 4px; color: #666; font-size: 10px; padding: 0 5px; }
+                QPushButton:checked { background-color: #e1f0ff; border: 1px solid #0078d4; color: #0078d4; font-weight: bold; }
+                QPushButton:hover { background-color: #eeeeee; }
+            """)
+            btn.clicked.connect(lambda checked, i=idx: self.toggle_column_visibility(i, checked))
+            self.col_actions[idx] = btn
+            self.col_toggle_layout.addWidget(btn)
+        self.col_toggle_layout.addStretch()
+        self.left_layout.addLayout(self.col_toggle_layout)
+
         self.table = TaskTable(0, 7)
         self.table.setHorizontalHeaderLabels(["", "", "タスク名", "進捗(%)", "期間指定", "色", "合計日数"])
         self.table.setColumnWidth(0, 20)
@@ -611,10 +596,16 @@ class GanttApp(QMainWindow):
         self.table.cellDoubleClicked.connect(self.on_table_cell_double_clicked)
         self.table.currentCellChanged.connect(self.update_selection_mark)
         
-        self.splitter.addWidget(self.table)
+        self.left_layout.addWidget(self.table)
+        self.splitter.addWidget(self.left_container)
         
         rc = QWidget()
         rcl = QVBoxLayout(rc); rcl.setContentsMargins(0,0,0,0); rcl.setSpacing(0)
+        
+        # 左側のボタンエリアと同じ高さのスペーサーを入れて行のズレを防ぐ
+        spacer = QWidget()
+        spacer.setFixedHeight(28) # col_toggle_layout の高さ(24) + margins(4)
+        rcl.addWidget(spacer)
         
         self.hs = QGraphicsScene()
         self.cs = ChartScene(self)
