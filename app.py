@@ -423,12 +423,67 @@ class ChartScene(QGraphicsScene):
         else:
             super().contextMenuEvent(e)
 
+class HideableHeader(QHeaderView):
+    def __init__(self, orientation, parent=None):
+        super().__init__(orientation, parent)
+        self.setSectionsClickable(True)
+        self.btn_size = 16
+        
+    def paintSection(self, painter, rect, logicalIndex):
+        super().paintSection(painter, rect, logicalIndex)
+        if logicalIndex != 2:
+            painter.save()
+            painter.setRenderHint(QPainter.Antialiasing)
+            
+            # ボタンの領域（右端）
+            br = QRectF(rect.right() - self.btn_size - 6, rect.top() + (rect.height() - self.btn_size)/2, self.btn_size, self.btn_size)
+            
+            # 目玉アイコン（表示/非表示の象徴）を描画
+            painter.setPen(QPen(QColor(100, 100, 100), 1.2))
+            # 輪郭（楕円）
+            painter.drawEllipse(br.adjusted(2, 4, -2, -4))
+            # 瞳
+            painter.setBrush(QBrush(QColor(100, 100, 100)))
+            painter.drawEllipse(br.adjusted(6, 6, -6, -6))
+            
+            painter.restore()
+
+    def mouseReleaseEvent(self, e):
+        logicalIndex = self.logicalIndexAt(e.position().toPoint())
+        if logicalIndex != -1 and logicalIndex != 2:
+            rect = QRectF(self.sectionViewportPosition(logicalIndex), 0, self.sectionSize(logicalIndex), self.height())
+            br = QRectF(rect.right() - self.btn_size - 10, 0, self.btn_size + 10, self.height())
+            if br.contains(e.position().toPoint()):
+                # GanttAppのメソッドを直接呼び出す
+                self.window().toggle_column_visibility(logicalIndex, False)
+                return
+        super().mouseReleaseEvent(e)
+
 class TaskTable(QTableWidget):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.setHorizontalHeader(HideableHeader(Qt.Horizontal, self))
         self.setSelectionMode(QTableWidget.NoSelection)
         self.setSelectionBehavior(QTableWidget.SelectRows)
         self.setFocusPolicy(Qt.NoFocus)
+        
+        # ヘッダーの右クリックメニューを有効化
+        self.horizontalHeader().setContextMenuPolicy(Qt.CustomContextMenu)
+        self.horizontalHeader().customContextMenuRequested.connect(self.show_header_menu)
+
+    def show_header_menu(self, pos):
+        menu = QMenu(self)
+        column_names = ["選択マーク", "開閉ボタン", "タスク名", "進捗(%)", "期間指定", "色", "合計日数"]
+        for i, name in enumerate(column_names):
+            action = menu.addAction(name)
+            action.setCheckable(True)
+            action.setChecked(not self.isColumnHidden(i))
+            if i == 2:
+                action.setEnabled(False)
+                
+            action.toggled.connect(lambda checked, idx=i: self.window().toggle_column_visibility(idx, checked))
+        
+        menu.exec(self.horizontalHeader().mapToGlobal(pos))
 
 class GanttApp(QMainWindow):
     def __init__(self):
@@ -501,13 +556,40 @@ class GanttApp(QMainWindow):
         
         self.btn_load = QPushButton("読込")
         self.btn_save = QPushButton("保存")
-        self.btn_settings = QPushButton("表示設定")
+        self.btn_settings = QPushButton("⚙ 表示設定")
         self.btn_load.clicked.connect(self.load_data)
         self.btn_save.clicked.connect(self.save_data)
         self.btn_settings.clicked.connect(self.open_settings)
+        
         tl.addWidget(self.btn_load)
         tl.addWidget(self.btn_save)
         tl.addWidget(self.btn_settings)
+        tl.addStretch()
+        
+        # 列表示切り替えボタン群 (アイ・コントロールバー)
+        self.col_actions = {}
+        col_info = [
+            (0, "マーク"), (1, "開閉"), (3, "進捗"), 
+            (4, "期間"), (5, "色"), (6, "合計")
+        ]
+        
+        # 表示コントロール用のコンテナ
+        tl.addWidget(QLabel("  表示設定:"))
+        for idx, name in col_info:
+            btn = QPushButton(f"👁 {name}")
+            btn.setCheckable(True)
+            btn.setChecked(True)
+            btn.setFixedWidth(75)
+            # スタイル設定: チェック状態で色を変える
+            btn.setStyleSheet("""
+                QPushButton { background-color: #f0f0f0; border: 1px solid #ccc; border-radius: 4px; padding: 2px; }
+                QPushButton:checked { background-color: #e1f0ff; border: 1px solid #0078d4; color: #0078d4; font-weight: bold; }
+                QPushButton:hover { background-color: #e5e5e5; }
+            """)
+            btn.clicked.connect(lambda checked, i=idx: self.toggle_column_visibility(i, checked))
+            self.col_actions[idx] = btn
+            tl.addWidget(btn)
+        
         ml.addLayout(tl)
         
         self.splitter = QSplitter(Qt.Horizontal)
@@ -1344,6 +1426,13 @@ class GanttApp(QMainWindow):
             name = self.get_color_name(code)
             parts.append(f"{name}: {days}日")
         return ", ".join(parts)
+
+    def toggle_column_visibility(self, idx, visible):
+        self.table.setColumnHidden(idx, not visible)
+        if idx in self.col_actions:
+            self.col_actions[idx].blockSignals(True)
+            self.col_actions[idx].setChecked(visible)
+            self.col_actions[idx].blockSignals(False)
 
     def load_data(self):
         p = QFileDialog.getOpenFileName(self, "開く", "", "JSON (*.json)")[0]
