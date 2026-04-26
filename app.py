@@ -456,11 +456,12 @@ class GanttApp(QMainWindow):
         self.splitter = QSplitter(Qt.Horizontal)
         ml.addWidget(self.splitter)
         
-        self.table = TaskTable(0, 5)
-        self.table.setHorizontalHeaderLabels(["", "タスク名", "進捗(%)", "期間指定", "色"])
-        self.table.setColumnWidth(0, 30)
+        self.table = TaskTable(0, 6)
+        self.table.setHorizontalHeaderLabels(["", "", "タスク名", "進捗(%)", "期間指定", "色"])
+        self.table.setColumnWidth(0, 20)
+        self.table.setColumnWidth(1, 30)
         self.table.horizontalHeader().setFixedHeight(self.header_height)
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
         self.table.verticalHeader().setDefaultSectionSize(self.row_height)
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
@@ -468,6 +469,7 @@ class GanttApp(QMainWindow):
         self.table.itemChanged.connect(self.on_table_item_changed)
         self.table.cellClicked.connect(self.on_table_cell_clicked)
         self.table.cellDoubleClicked.connect(self.on_table_cell_double_clicked)
+        self.table.currentCellChanged.connect(self.update_selection_mark)
         
         self.splitter.addWidget(self.table)
         
@@ -734,6 +736,19 @@ class GanttApp(QMainWindow):
         self.tasks = remaining_tasks
         
         self.update_ui(refresh_chart)
+        # 移動後の行に選択マークを更新
+        self.update_selection_mark()
+
+    def update_selection_mark(self, *args):
+        self.table.blockSignals(True)
+        curr = self.table.currentRow()
+        for r in range(self.table.rowCount()):
+            it = self.table.item(r, 0)
+            if it:
+                it.setText("●" if r == curr else "")
+                it.setTextAlignment(Qt.AlignCenter)
+                it.setForeground(QColor(0, 120, 212)) # 青いドット
+        self.table.blockSignals(False)
 
     def add_task(self):
         t = {
@@ -744,6 +759,8 @@ class GanttApp(QMainWindow):
         }
         self.tasks.append(t)
         self.update_ui()
+        # 新しく追加した行を選択（末尾）
+        self.table.setCurrentCell(len(self.visible_tasks_info) - 1, 2)
 
     def add_group(self):
         g = {
@@ -754,6 +771,8 @@ class GanttApp(QMainWindow):
         }
         self.tasks.append(g)
         self.update_ui()
+        # 新しく追加した行を選択（末尾）
+        self.table.setCurrentCell(len(self.visible_tasks_info) - 1, 2)
 
     def delete_task(self):
         r = self.table.currentRow()
@@ -805,7 +824,7 @@ class GanttApp(QMainWindow):
                 e = p['end_date'].replace('-', '/')
                 p_strs.append(f"{s}-{e}")
             
-            period_item = self.table.item(r, 3)
+            period_item = self.table.item(r, 4)
             if period_item:
                 period_item.setText(", ".join(p_strs))
         self.table.blockSignals(False)
@@ -846,12 +865,19 @@ class GanttApp(QMainWindow):
             is_group = t.get('is_group', False)
             
             # セルが存在しない場合のみ生成する
-            for c in range(5):
+            for c in range(6):
                 if self.table.item(r, c) is None:
                     self.table.setItem(r, c, QTableWidgetItem())
             
-            # 0: Toggle
-            toggle_item = self.table.item(r, 0)
+            # 0: Selection Mark
+            mark_item = self.table.item(r, 0)
+            mark_item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+            mark_item.setBackground(QColor(255, 255, 255))
+            if is_group: mark_item.setBackground(QColor(242, 242, 242))
+            # テキストは update_selection_mark で設定
+
+            # 1: Toggle
+            toggle_item = self.table.item(r, 1)
             toggle_item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
             toggle_item.setForeground(QColor(51, 51, 51))
             f = toggle_item.font(); f.setBold(False); toggle_item.setFont(f)
@@ -865,8 +891,8 @@ class GanttApp(QMainWindow):
             else:
                 toggle_item.setText("")
 
-            # 1: Name
-            item_name = self.table.item(r, 1)
+            # 2: Name
+            item_name = self.table.item(r, 2)
             item_name.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
             item_name.setForeground(QColor(51, 51, 51))
             f = item_name.font(); f.setBold(False); item_name.setFont(f)
@@ -876,20 +902,20 @@ class GanttApp(QMainWindow):
                 f = item_name.font(); f.setBold(True); item_name.setFont(f)
                 item_name.setBackground(QColor(242, 242, 242))
             
-            # 2: Progress
-            item_prog = self.table.item(r, 2)
+            # 3: Progress
+            item_prog = self.table.item(r, 3)
             item_prog.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
             item_prog.setForeground(QColor(51, 51, 51))
             item_prog.setBackground(QColor(255, 255, 255))
             
-            # 3: Period
-            item_period = self.table.item(r, 3)
+            # 4: Period
+            item_period = self.table.item(r, 4)
             item_period.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
             item_period.setForeground(QColor(51, 51, 51))
             item_period.setBackground(QColor(255, 255, 255))
             
-            # 4: Color
-            item_color = self.table.item(r, 4)
+            # 5: Color
+            item_color = self.table.item(r, 5)
             item_color.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
             item_color.setForeground(QColor(51, 51, 51))
             item_color.setBackground(QColor(255, 255, 255))
@@ -923,6 +949,7 @@ class GanttApp(QMainWindow):
         if self.table.rowCount() > new_rows:
             self.table.setRowCount(new_rows)
             
+        self.update_selection_mark()
         self.table.blockSignals(False)
         if refresh_chart:
             self.draw_chart()
@@ -934,9 +961,9 @@ class GanttApp(QMainWindow):
         info = self.visible_tasks_info[row]
         t = info['task']
         
-        if col == 1: # Name
+        if col == 2: # Name
             t['name'] = item.text().strip()
-        elif col == 2: # Progress
+        elif col == 3: # Progress
             if t.get('is_group'): return
             try:
                 prog = int(item.text().replace('%', '').strip())
@@ -946,7 +973,7 @@ class GanttApp(QMainWindow):
             self.table.blockSignals(True)
             item.setText(str(t['progress']))
             self.table.blockSignals(False)
-        elif col == 3: # Period
+        elif col == 4: # Period
             if t.get('is_group'): return
             period_str = item.text()
             parsed = self.get_periods_from_string(period_str)
@@ -959,7 +986,8 @@ class GanttApp(QMainWindow):
 
     def on_table_cell_clicked(self, row, col):
         if row >= len(self.visible_tasks_info): return
-        if col == 0:
+        self.update_selection_mark()
+        if col == 1: # Toggle column
             info = self.visible_tasks_info[row]
             t = info['task']
             if t.get('is_group'):
@@ -971,7 +999,7 @@ class GanttApp(QMainWindow):
         info = self.visible_tasks_info[row]
         t = info['task']
         
-        if col == 4: # Color column
+        if col == 5: # Color column
             color = QColorDialog.getColor(QColor(t.get('color', '#0078d4')), self, "色を選択")
             if color.isValid():
                 t['color'] = color.name()
