@@ -297,8 +297,15 @@ class GanttBarItem(QGraphicsRectItem):
             color_code = p_dict.get('color', self.task.get('color', '#0078d4'))
             bc = QColor(color_code)
             
-            self.setPen(QPen(Qt.black if self.isSelected() else bc.darker(120), 2 if self.isSelected() else 1))
-            self.setBrush(QBrush(bc.lighter(150)))
+            if self.isSelected():
+                # 選択時は太いオレンジ色の枠線で強調
+                self.setPen(QPen(QColor("#ff8c00"), 3))
+                self.setBrush(QBrush(bc.lighter(170)))
+                self.setZValue(40) # 選択中のアイテムを最前面に
+            else:
+                self.setPen(QPen(bc.darker(120), 1))
+                self.setBrush(QBrush(bc.lighter(150)))
+                self.setZValue(30)
             
             prog = self.task.get('progress', 0)
         
@@ -1030,7 +1037,7 @@ class GanttApp(QMainWindow):
             QMainWindow { background-color: #f0f0f0; }
             QWidget { background-color: #f0f0f0; color: #333333; }
             QTableWidget { background-color: #ffffff; gridline-color: #e0e0e0; border: 1px solid #cccccc; color: #333333; outline: 0; }
-            QTableWidget::item:selected { background-color: transparent; color: #333333; }
+            QTableWidget::item:selected { background-color: #e1f0ff; color: #333333; }
             QHeaderView::section { background-color: #e8e8e8; color: #333333; border: 1px solid #cccccc; padding: 4px; font-weight: bold; }
             QPushButton { background-color: #ffffff; border: 1px solid #cccccc; padding: 6px 12px; border-radius: 4px; }
             QPushButton:hover { background-color: #e8e8e8; }
