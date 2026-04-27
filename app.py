@@ -787,21 +787,15 @@ class ChartScene(QGraphicsScene):
         else:
             self.app.chart_view.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
 
-        # 3. 選択済みバーを左クリックした場合の「選択ロック」処理
-        if target_bar and e.button() == Qt.LeftButton and not (e.modifiers() & Qt.ControlModifier):
+        # 3. すでに選択されているバーを左クリックした場合の選択維持（ドラッグ準備）
+        if target_bar and e.button() == Qt.LeftButton and not (e.modifiers() & (Qt.ControlModifier | Qt.ShiftModifier)):
             if target_bar.isSelected():
-                # 重要：現在選択されている全てのアイテムを一時的に「選択変更不可」にする
-                # これにより、super().mousePressEvent(e) を呼んでも選択が維持され、
-                # かつドラッグ移動（Grab）だけを正常に開始させることができる
+                # 重要：現在選択されている全てのアイテムを記録し、
+                # super().mousePressEvent(e) による他アイテムの選択解除を防ぐために後で復元する
                 selected_items = self.selectedItems()
-                for it in selected_items:
-                    it.setFlag(QGraphicsRectItem.ItemIsSelectable, False)
-                
                 super().mousePressEvent(e)
-                
-                # 即座にフラグを元に戻す
                 for it in selected_items:
-                    it.setFlag(QGraphicsRectItem.ItemIsSelectable, True)
+                    it.setSelected(True)
                 return
 
         # 4. 右クリック処理
