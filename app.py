@@ -368,32 +368,45 @@ class GanttBarItem(QGraphicsRectItem):
         self.setCursor(Qt.ArrowCursor)
         super().hoverLeaveEvent(event)
 
+    def itemChange(self, change, value):
+        # 選択状態が変わった時に見た目を更新する
+        if change == QGraphicsRectItem.ItemSelectedChange:
+            QTimer.singleShot(0, self.update_appearance)
+        return super().itemChange(change, value)
+
     def mousePressEvent(self, event):
         if event.button() == Qt.RightButton:
             if self.isSelected():
-                # すでに選択されている場合は、他の選択を維持するためにシーンのデフォルト処理を避ける
                 event.accept()
                 return
             else:
-                # 未選択なら、他の選択を解除して自身を選択する
                 if self.scene():
                     self.scene().clearSelection()
                 self.setSelected(True)
                 event.accept()
                 return
+        
         if event.button() == Qt.LeftButton:
-            self.app.save_state()
+            # リサイズハンドルの判定
             x = event.pos().x()
             w = self.rect().width()
             margin = 12 if w <= self.app.day_width else 10
             margin = min(margin, w / 2 - 2)
+            
             if x < margin:
+                self.app.save_state()
                 self.resizing_left = True
             elif x > w - margin:
+                self.app.save_state()
                 self.resizing_right = True
             else:
                 self.setCursor(Qt.ClosedHandCursor)
+            
+            # テーブルの行選択を同期
+            self.app.table.setCurrentCell(self.row, 2)
+        
         super().mousePressEvent(event)
+        self.update_appearance()
 
     def mouseMoveEvent(self, event):
         snap = self.app.day_width
@@ -490,15 +503,16 @@ class GanttBarItem(QGraphicsRectItem):
                         task['periods'] = [p for i, p in enumerate(task['periods']) if i not in indices]
                 
                 # 2. 挿入処理
+                self.app.pending_selection = []
                 for target_task, p_data in to_insert:
                     if target_task.get('is_group'):
                         continue
                     if 'periods' not in target_task:
                         target_task['periods'] = []
                     target_task['periods'].append(p_data)
+                    # 再選択のために、新しく作成されたデータのIDを記憶
+                    self.app.pending_selection.append(id(p_data))
 
-                if self.scene():
-                    self.scene().clearSelection()
                 QTimer.singleShot(100, self.app.update_ui)
             except Exception as e:
                 print(f"Error in multi-move: {e}")
@@ -756,26 +770,53 @@ class ChartScene(QGraphicsScene):
         self.start_x = 0
 
     def mousePressEvent(self, e):
-        if e.button() == Qt.RightButton:
-            item = self.itemAt(e.scenePos(), self.app.chart_view.transform())
-            if item:
-                # アイテム（またはその子要素）の上での右クリックなら、
-                # シーンのデフォルト処理（選択解除）を避けるためにイベントを直接送る
-                target = item
-                while target and not isinstance(target, GanttBarItem):
-                    target = target.parentItem()
-                
-                if target:
-                    target.mousePressEvent(e)
-                    return
-
+        # 1. アイテムの特定
         item = self.itemAt(e.scenePos(), self.app.chart_view.transform())
-        if not item and e.button() == Qt.LeftButton:
-            # Altキーが押されている場合のみ、ドラッグによる期間作成を許可
+        target_bar = None
+        if item:
+            temp = item
+            while temp:
+                if isinstance(temp, GanttBarItem):
+                    target_bar = temp
+                    break
+                temp = temp.parentItem()
+
+        # 2. ドラッグモードの動的制御
+        if target_bar:
+            self.app.chart_view.setDragMode(QGraphicsView.DragMode.NoDrag)
+        else:
+            self.app.chart_view.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
+
+        # 3. 選択済みバーを左クリックした場合の「選択ロック」処理
+        if target_bar and e.button() == Qt.LeftButton and not (e.modifiers() & Qt.ControlModifier):
+            if target_bar.isSelected():
+                # 重要：現在選択されている全てのアイテムを一時的に「選択変更不可」にする
+                # これにより、super().mousePressEvent(e) を呼んでも選択が維持され、
+                # かつドラッグ移動（Grab）だけを正常に開始させることができる
+                selected_items = self.selectedItems()
+                for it in selected_items:
+                    it.setFlag(QGraphicsRectItem.ItemIsSelectable, False)
+                
+                super().mousePressEvent(e)
+                
+                # 即座にフラグを元に戻す
+                for it in selected_items:
+                    it.setFlag(QGraphicsRectItem.ItemIsSelectable, True)
+                return
+
+        # 4. 右クリック処理
+        if target_bar and e.button() == Qt.RightButton:
+            target_bar.mousePressEvent(e)
+            e.accept()
+            return
+
+        # 5. 背景クリックまたは未選択アイテムの通常処理
+        if not target_bar and e.button() == Qt.LeftButton:
             if e.modifiers() & Qt.AltModifier:
                 self.start_x = e.scenePos().x()
             else:
                 self.start_x = 0
+        
         super().mousePressEvent(e)
 
     def mouseReleaseEvent(self, e):
@@ -858,6 +899,7 @@ class ChartScene(QGraphicsScene):
             if action == paste_action and paste_action:
                 try:
                     self.app.save_state()
+                    self.app.pending_selection = []
                     for cp in self.app.clipboard_periods:
                         new_period = cp['data'].copy()
                         target_v_row = row + cp['rel_row']
@@ -881,6 +923,8 @@ class ChartScene(QGraphicsScene):
                                     if 'periods' not in target_task:
                                         target_task['periods'] = []
                                     target_task['periods'].append(new_period)
+                                    # 貼り付けたアイテムを記憶
+                                    self.app.pending_selection.append(id(new_period))
                                 except Exception:
                                     continue
                     QTimer.singleShot(100, self.app.update_ui)
@@ -982,6 +1026,7 @@ class GanttApp(QMainWindow):
         self.snap_timer = QTimer()
         self.snap_timer.setSingleShot(True)
         self.snap_timer.timeout.connect(self.snap_horizontal_scroll)
+        self.pending_selection = []
         
         self.init_ui()
         self.apply_styles()
@@ -2110,11 +2155,29 @@ class GanttApp(QMainWindow):
         return os.path.join(os.path.dirname(os.path.abspath(__file__)), 'icon.ico')
 
     def draw_chart(self):
+        # 再描画前に現在の選択状態を一時保存（復元用）
+        if not getattr(self, 'pending_selection', []):
+            sel = []
+            for item in self.cs.selectedItems():
+                if isinstance(item, GanttBarItem):
+                    p_data = None
+                    periods = item.task.get('periods', [])
+                    if item.period_index < len(periods):
+                        p_data = periods[item.period_index]
+                    else:
+                        # periodsがない場合やインデックス外の場合はタスク自身を対象とする
+                        p_data = item.task
+                    if p_data is not None:
+                        sel.append(id(p_data))
+            self.pending_selection = sel
+
         self.month_label_items = []
         self.hs.clear()
         self.cs.clear()
         tw_total = self.display_days * self.day_width
         ch = max(self.chart_view.height(), len(self.tasks) * self.row_height)
+        if len(self.visible_tasks_info) > 0:
+            ch = max(ch, len(self.visible_tasks_info) * self.row_height)
         
         last_m = None
         for i in range(self.display_days):
@@ -2265,7 +2328,9 @@ class GanttApp(QMainWindow):
                 periods = t.get('periods')
                 if periods is None:
                     if t.get('start_date') and t.get('end_date'):
-                        periods = [{'start_date': t['start_date'], 'end_date': t['end_date']}]
+                        # 互換性のため、データモデル自体を periods 形式に移行して ID を安定させる
+                        t['periods'] = [{'start_date': t['start_date'], 'end_date': t['end_date']}]
+                        periods = t['periods']
                     else:
                         continue
                 
@@ -2280,6 +2345,11 @@ class GanttApp(QMainWindow):
                     bar = GanttBarItem(t, row, p_idx, self, QRectF(0, 0, bar_w, self.row_height - 20))
                     bar.setPos((sd - self.min_date).days * self.day_width, row * self.row_height + 10)
                     bar.setZValue(30)
+                    
+                    # 移動後などの再選択
+                    if id(p) in getattr(self, 'pending_selection', []):
+                        bar.setSelected(True)
+                        
                     self.cs.addItem(bar)
             except Exception as e:
                 print(f"Error drawing bar for row {row}: {e}")
@@ -2287,6 +2357,10 @@ class GanttApp(QMainWindow):
         self.hs.setSceneRect(0, 0, tw_total, self.header_height)
         self.cs.setSceneRect(0, 0, tw_total, ch)
         self.update_month_labels_pos()
+        
+        # 再選択リストをクリア
+        if hasattr(self, 'pending_selection'):
+            self.pending_selection = []
 
     def save_data(self):
         initial_dir = os.path.dirname(self.last_path) if self.last_path and os.path.exists(os.path.dirname(self.last_path)) else ""
