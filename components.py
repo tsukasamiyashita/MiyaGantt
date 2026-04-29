@@ -8,6 +8,15 @@ from PySide6.QtWidgets import *
 from PySide6.QtCore import *
 from PySide6.QtGui import *
 
+class NoHighlightDelegate(QStyledItemDelegate):
+    def paint(self, painter, option, index):
+        # 選択状態とフォーカス状態のフラグを落としてから標準の描画を行う
+        # これにより、クリック時も背景色（グループ行のグレーなど）がハイライト色やCSS設定で上書きされない
+        opt = QStyleOptionViewItem(option)
+        opt.state &= ~QStyle.State_Selected
+        opt.state &= ~QStyle.State_HasFocus
+        super().paint(painter, opt, index)
+
 class HideableHeader(QHeaderView):
     def __init__(self, orientation, parent=None):
         super().__init__(orientation, parent)
@@ -29,6 +38,7 @@ class TaskTable(QTableWidget):
         self.setSelectionMode(QTableWidget.NoSelection)
         self.setSelectionBehavior(QTableWidget.SelectRows)
         self.setFocusPolicy(Qt.NoFocus)
+        self.setItemDelegate(NoHighlightDelegate(self))
         
         # ヘッダーの右クリックメニューを有効化
         self.horizontalHeader().setContextMenuPolicy(Qt.CustomContextMenu)

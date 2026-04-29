@@ -542,13 +542,29 @@ class ChartScene(QGraphicsScene):
                     break
                 temp = temp.parentItem()
 
-        # 2. ドラッグモードの動的制御
-        if target_bar:
-            self.app.chart_view.setDragMode(QGraphicsView.DragMode.NoDrag)
-        else:
-            self.app.chart_view.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
+        # 2. ドラッグモードの制御（背景クリックでの矩形選択による色変化を防ぐため常にNoDrag）
+        self.app.chart_view.setDragMode(QGraphicsView.DragMode.NoDrag)
 
-        # 3. すでに選択されているバーを左クリックした場合の選択維持（ドラッグ準備）
+        # 3. 背景クリック（バー以外）の場合
+        if not target_bar:
+            # 背景クリック時も対応するテーブル行を選択状態にする（同期）
+            if e.button() == Qt.LeftButton:
+                y = e.scenePos().y()
+                row = int(y / self.app.row_height)
+                if 0 <= row < len(self.app.visible_tasks_info):
+                    self.app.table.setCurrentCell(row, 2)
+
+                if e.modifiers() & Qt.AltModifier:
+                    self.start_x = e.scenePos().x()
+                else:
+                    self.start_x = 0
+            
+            # 重要：背景クリック時は標準のイベント（super）を呼ばず、ここで処理を終了する
+            # これにより、背景色の一時的な変化やチラつき、不要な選択解除を完全に防ぐ
+            e.accept()
+            return
+
+        # 4. すでに選択されているバーを左クリックした場合の選択維持（ドラッグ準備）
         if target_bar and e.button() == Qt.LeftButton and not (e.modifiers() & (Qt.ControlModifier | Qt.ShiftModifier)):
             if target_bar.isSelected():
                 # 重要：現在選択されている全てのアイテムを記録し、
@@ -559,19 +575,13 @@ class ChartScene(QGraphicsScene):
                     it.setSelected(True)
                 return
 
-        # 4. 右クリック処理
+        # 5. 右クリック処理
         if target_bar and e.button() == Qt.RightButton:
             target_bar.mousePressEvent(e)
             e.accept()
             return
-
-        # 5. 背景クリックまたは未選択アイテムの通常処理
-        if not target_bar and e.button() == Qt.LeftButton:
-            if e.modifiers() & Qt.AltModifier:
-                self.start_x = e.scenePos().x()
-            else:
-                self.start_x = 0
         
+        # 6. 未選択のバーをクリックした場合などの通常処理
         super().mousePressEvent(e)
 
     def mouseReleaseEvent(self, e):

@@ -67,8 +67,16 @@ class GanttApp(QMainWindow, FileIOMixin, ChartMixin, EventsMixin, SyncMixin, Uti
         self.setStyleSheet("""
             QMainWindow { background-color: #f0f0f0; }
             QWidget { background-color: #f0f0f0; color: #333333; }
-            QTableWidget { background-color: #ffffff; gridline-color: #e0e0e0; border: 1px solid #cccccc; color: #333333; outline: 0; }
-            QTableWidget::item:selected { background-color: #e1f0ff; color: #333333; }
+            QTableWidget { 
+                background-color: #ffffff; 
+                gridline-color: #e0e0e0; 
+                border: 1px solid #cccccc; 
+                color: #333333; 
+                outline: 0; 
+
+            }
+
+
             QHeaderView::section { background-color: #e8e8e8; color: #333333; border: 1px solid #cccccc; padding: 4px; font-weight: bold; }
             QPushButton { background-color: #ffffff; border: 1px solid #cccccc; padding: 6px 12px; border-radius: 4px; }
             QPushButton:hover { background-color: #e8e8e8; }
@@ -249,7 +257,7 @@ class GanttApp(QMainWindow, FileIOMixin, ChartMixin, EventsMixin, SyncMixin, Uti
         self.cs = ChartScene(self)
         self.hv = QGraphicsView(self.hs)
         self.chart_view = QGraphicsView(self.cs)
-        self.chart_view.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
+        self.chart_view.setDragMode(QGraphicsView.DragMode.NoDrag)
         
         for v in [self.hv, self.chart_view]:
             v.setRenderHint(QPainter.Antialiasing)
