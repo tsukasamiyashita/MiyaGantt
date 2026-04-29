@@ -1,4 +1,4 @@
-# tsukasamiyashita/miyagantt/MiyaGantt-90775b445eeca08d321c122853c84ad8762e2c95/graphics.py
+# tsukasamiyashita/miyagantt/MiyaGantt-fdab2c007da130510fa926a9e04a8f0ba70d9678/graphics.py
 import sys
 import os
 import calendar
@@ -510,11 +510,6 @@ class ChartScene(QGraphicsScene):
         super().__init__()
         self.app = app
         self.start_x = 0
-        self.setItemIndexMethod(QGraphicsScene.NoIndex)
-        if hasattr(self.app, 'chart_view') and self.app.chart_view:
-            self.app.chart_view.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
-
-
 
     def mousePressEvent(self, e):
         log_event("ChartScene.mousePressEvent", f"Pos: {e.scenePos().x()}, {e.scenePos().y()}, Button: {e.button()}")
@@ -541,7 +536,7 @@ class ChartScene(QGraphicsScene):
                 else:
                     self.start_x = 0
             
-            super().mousePressEvent(e)
+            e.accept()
             return
 
         if target_bar and e.button() == Qt.LeftButton and not (e.modifiers() & (Qt.ControlModifier | Qt.ShiftModifier)):
