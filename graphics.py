@@ -160,6 +160,7 @@ class GanttBarItem(QGraphicsRectItem):
             # テーブルの行選択を同期
             self.app.table.setCurrentCell(self.row, 2)
         
+        
         super().mousePressEvent(event)
         self.update_appearance()
 
@@ -497,7 +498,12 @@ class HeaderScene(QGraphicsScene):
         self.app = app
 
     def mousePressEvent(self, event):
+        # 自分がセットされているのが header_view であることを確認
+        if hasattr(self.app, 'hv') and event.widget() != self.app.hv.viewport():
+            return
+
         if event.button() == Qt.LeftButton:
+
             # ヘッダーの下半分（日付・曜日エリア）をクリックした場合のみ反応
             y = event.scenePos().y()
             if 35 <= y <= 70:
@@ -582,10 +588,6 @@ class ChartScene(QGraphicsScene):
         gantt_item = next((it for it in items if isinstance(it, GanttBarItem)), None)
             
         if not gantt_item and e.button() == Qt.LeftButton:
-            # Altキーが押されている場合のみ、ダブルクリックによる期間作成を許可
-            if not (e.modifiers() & Qt.AltModifier):
-                super().mouseDoubleClickEvent(e)
-                return
 
             y = e.scenePos().y()
             row = int(y / self.app.row_height)
@@ -644,6 +646,7 @@ class ChartScene(QGraphicsScene):
             action = menu.exec(e.screenPos())
             x = e.scenePos().x()
             day_idx = int(x / self.app.day_width)
+            d_str = (self.app.min_date + timedelta(days=day_idx)).strftime("%Y-%m-%d")
             
             if action == paste_action and paste_action:
                 try:

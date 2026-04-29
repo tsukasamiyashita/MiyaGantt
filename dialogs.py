@@ -185,7 +185,7 @@ class SummaryDialog(QDialog):
                         ped = datetime.strptime(p['end_date'], "%Y-%m-%d")
                         overlap = (min(ped, h_end) - max(psd, h_start)).days + 1
                         if overlap > 0:
-                            c_code = p.get('color', t.get('color', '#0078d4'))
+                            c_code = t.get('color', '#0078d4')
                             # 人数を考慮した集計
                             val = overlap * t.get('person_count', 1)
                             color_map[c_code] = color_map.get(c_code, 0) + val

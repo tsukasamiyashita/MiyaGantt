@@ -48,33 +48,30 @@ class ChartMixin:
             # 背景色の決定
             bg = None
             if d.weekday() == 5: # 土曜日
+                bg = QColor(240, 248, 255) # 青
                 if is_custom:
-                    bg = QColor(255, 240, 240) # 既存機能：クリックで赤
-                else:
-                    bg = QColor(240, 248, 255) # デフォルト：青
-            elif d.weekday() == 6 or is_public: # 日曜日または公的祝日
-                if is_custom:
-                    bg = None # クリックで無色（白）に反転
-                else:
-                    bg = QColor(255, 240, 240) # デフォルト：赤
-            elif is_custom: # 平日でクリックされた場合
+                    bg = QColor(255, 240, 240) # 土曜日を祝日（赤）にする
+            elif d.weekday() == 6 or is_public or is_custom: # 日曜日、祝日、カスタム祝日
                 bg = QColor(255, 240, 240) # 赤
             
             if bg:
                 re = self.cs.addRect(x, 0, self.day_width, ch, QPen(Qt.NoPen), QBrush(bg))
                 re.setZValue(-20)
                 re.setAcceptedMouseButtons(Qt.NoButton)
+                re.setFlag(QGraphicsItem.ItemIsSelectable, False)
             
             # グリッド
             gl = self.cs.addLine(x, 0, x, ch, QPen(QColor(220, 220, 220), 1))
             gl.setZValue(-15)
             gl.setAcceptedMouseButtons(Qt.NoButton)
+            gl.setFlag(QGraphicsItem.ItemIsSelectable, False)
             
             if self.day_width >= 60:
                 for h in [6, 12, 18]:
                     sl = self.cs.addLine(x + (self.day_width * h / 24.0), 0, x + (self.day_width * h / 24.0), ch, QPen(QColor(245, 245, 245), 0.5))
                     sl.setZValue(-15)
                     sl.setAcceptedMouseButtons(Qt.NoButton)
+                    sl.setFlag(QGraphicsItem.ItemIsSelectable, False)
             
             # ヘッダー (日付・曜日)
             h_bg = QColor(255, 255, 225) if is_custom else QColor(248, 248, 248)
@@ -134,7 +131,10 @@ class ChartMixin:
         # 横線
         for r in range(len(self.visible_tasks_info) + 1):
             y = r * self.row_height
-            self.cs.addLine(0, y, tw_total, y, QPen(QColor(220, 220, 220), 1)).setZValue(-15)
+            line = self.cs.addLine(0, y, tw_total, y, QPen(QColor(220, 220, 220), 1))
+            line.setZValue(-15)
+            line.setAcceptedMouseButtons(Qt.NoButton)
+            line.setFlag(QGraphicsItem.ItemIsSelectable, False)
         
         self.hs.addRect(0, 0, tw_total, 35, QPen(Qt.NoPen), QBrush(QColor(235, 245, 255))).setZValue(0)
         

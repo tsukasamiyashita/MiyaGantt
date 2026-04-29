@@ -205,7 +205,7 @@ class SyncMixin:
                     ped = datetime.strptime(p['end_date'], "%Y-%m-%d")
                     overlap = (min(ped, timeline_end) - max(psd, timeline_start)).days + 1
                     if overlap > 0:
-                        color = p.get('color', task.get('color', '#0078d4'))
+                        color = task.get('color', '#0078d4')
                         # 人数を考慮して加算
                         day_map[color] = day_map.get(color, 0) + overlap * task.get('person_count', 1)
                 except ValueError:
