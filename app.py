@@ -803,8 +803,11 @@ class GanttApp(QMainWindow):
         self.btn_next_m.clicked.connect(lambda: self.scroll_by_unit('month', 1))
         self.btn_next_y.clicked.connect(lambda: self.scroll_by_unit('year', 1))
         
-        nav_btns = [self.btn_prev_y, self.btn_prev_m, self.btn_prev_w, self.btn_prev_d, 
-                    self.btn_today, self.btn_next_d, self.btn_next_w, self.btn_next_m, self.btn_next_y]
+        nav_btns = [self.btn_today, 
+                    self.btn_prev_d, self.btn_next_d,
+                    self.btn_prev_w, self.btn_next_w,
+                    self.btn_prev_m, self.btn_next_m,
+                    self.btn_prev_y, self.btn_next_y]
         
         for b in nav_btns:
             if b != self.btn_today:
@@ -1662,18 +1665,42 @@ class GanttApp(QMainWindow):
         if unit == 'day':
             new_date = current_date + timedelta(days=direction)
         elif unit == 'week':
-            # 指定方向へ1週間分移動し、その週の月曜日にスナップ
-            target_date = current_date + timedelta(days=direction * 7)
-            new_date = target_date - timedelta(days=target_date.weekday())
+            # 現在の週の月曜日を基準にする
+            monday = current_date - timedelta(days=current_date.weekday())
+            if direction > 0:
+                # 次の週の月曜日へ
+                new_date = monday + timedelta(days=7)
+            else:
+                # 現在が月曜日なら前週、そうでなければ今週の月曜日へ
+                new_date = monday - timedelta(days=7) if current_date == monday else monday
         elif unit == 'month':
-            # 指定方向の月の1日にスナップ
-            m = current_date.month - 1 + direction
-            y = current_date.year + m // 12
-            m = m % 12 + 1
-            new_date = datetime(y, m, 1)
+            # 現在の月の1日を基準にする
+            first_day = current_date.replace(day=1)
+            if direction > 0:
+                # 翌月の1日へ
+                m = first_day.month % 12 + 1
+                y = first_day.year + (1 if first_day.month == 12 else 0)
+                new_date = datetime(y, m, 1)
+            else:
+                # 現在が1日なら前月、そうでなければ今月の1日へ
+                if current_date == first_day:
+                    m = (first_day.month - 2) % 12 + 1
+                    y = first_day.year - (1 if first_day.month == 1 else 0)
+                    new_date = datetime(y, m, 1)
+                else:
+                    new_date = first_day
         elif unit == 'year':
-            # 指定方向の年の1月1日にスナップ
-            new_date = datetime(current_date.year + direction, 1, 1)
+            # 現在の年の1/1を基準にする
+            jan_first = current_date.replace(month=1, day=1)
+            if direction > 0:
+                # 翌年の1/1へ
+                new_date = jan_first.replace(year=jan_first.year + 1)
+            else:
+                # 現在が1/1なら前年、そうでなければ今年の1/1へ
+                if current_date == jan_first:
+                    new_date = jan_first.replace(year=jan_first.year - 1)
+                else:
+                    new_date = jan_first
         
         new_v = (new_date - self.min_date).days * self.day_width
         self.chart_view.horizontalScrollBar().setValue(int(new_v))
