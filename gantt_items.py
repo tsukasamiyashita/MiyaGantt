@@ -30,6 +30,14 @@ class GanttBarItem(QGraphicsRectItem):
         
         self.resizing_left = False
         self.resizing_right = False
+        
+        # 期間データを直接参照として保持（移動後の再選択用）
+        periods = self.task.get('periods', [])
+        if self.period_index < len(periods):
+            self.period_dict = periods[self.period_index]
+        else:
+            self.period_dict = self.task
+            
         self.update_appearance()
 
     def update_appearance(self):
@@ -245,8 +253,26 @@ class GanttBarItem(QGraphicsRectItem):
         super().mouseReleaseEvent(event)
         
         # シーンのクリアによるクラッシュを防ぐため、UI更新を遅延させる
-        QTimer.singleShot(0, self.app.sync_table_from_tasks)
-        QTimer.singleShot(0, self.app.update_ui)
+        # また、移動したアイテムを再選択するために期間データの参照を保持
+        selected_period_dicts = []
+        selected_items = [it for it in self.scene().selectedItems() if isinstance(it, GanttBarItem)]
+        if self not in selected_items:
+            selected_items.append(self)
+        for it in selected_items:
+            if hasattr(it, 'period_dict'):
+                selected_period_dicts.append(it.period_dict)
+
+        def finalize_ui():
+            self.app.sync_table_from_tasks()
+            self.app.update_ui()
+            # 移動後のアイテムを再選択
+            if selected_period_dicts:
+                for item in self.app.cs.items():
+                    if isinstance(item, GanttBarItem) and hasattr(item, 'period_dict'):
+                        if item.period_dict in selected_period_dicts:
+                            item.setSelected(True)
+
+        QTimer.singleShot(0, finalize_ui)
 
     def mouseDoubleClickEvent(self, event):
         # Prevent default double click which was old edit open
@@ -322,18 +348,21 @@ class ChartScene(QGraphicsScene):
         self.selection_start = None
 
     def mousePressEvent(self, e):
-        item = self.itemAt(e.scenePos(), self.app.chart_view.transform())
-        if not item and e.button() == Qt.LeftButton:
+        # バー以外のアイテム（背景の土日祝日用矩形など）は無視して範囲選択を開始できるようにする
+        items = self.items(e.scenePos(), Qt.IntersectsItemShape, Qt.DescendingOrder, self.app.chart_view.transform())
+        gantt_item = next((it for it in items if isinstance(it, GanttBarItem)), None)
+
+        if not gantt_item and e.button() == Qt.LeftButton:
             if e.modifiers() & Qt.ShiftModifier:
-                # 範囲選択の開始
+                # 通常のタスク作成ドラッグ（Shiftキーが必要）
+                self.start_x = e.scenePos().x()
+            else:
+                # 範囲選択の開始（デフォルト）
                 self.selection_start = e.scenePos()
                 self.selection_rect = self.addRect(QRectF(self.selection_start, self.selection_start), 
                                                  QPen(QColor(0, 120, 212), 1, Qt.DashLine), 
                                                  QBrush(QColor(0, 120, 212, 40)))
                 self.selection_rect.setZValue(100)
-            else:
-                # 通常のタスク作成ドラッグ
-                self.start_x = e.scenePos().x()
         super().mousePressEvent(e)
 
     def mouseMoveEvent(self, e):
@@ -358,8 +387,9 @@ class ChartScene(QGraphicsScene):
             return
 
         if self.start_x > 0:
-            item = self.itemAt(e.scenePos(), self.app.chart_view.transform())
-            if not item:
+            items = self.items(e.scenePos(), Qt.IntersectsItemShape, Qt.DescendingOrder, self.app.chart_view.transform())
+            gantt_item = next((it for it in items if isinstance(it, GanttBarItem)), None)
+            if not gantt_item:
                 if abs(e.scenePos().x() - self.start_x) > (self.app.day_width * 0.1):
                     self.app.create_task_from_drag(self.start_x, e.scenePos().x(), e.scenePos().y())
             self.start_x = 0
