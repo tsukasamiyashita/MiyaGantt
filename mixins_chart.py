@@ -51,15 +51,13 @@ class ChartMixin:
             if custom_status == "営業日":
                 pass # 営業日として指定された場合は色なし
             else:
-                # 古いデータ互換のため、"営業日"以外は全て休日として扱う
                 is_custom_holiday = (custom_status is not None and custom_status != "営業日")
-                
                 if d.weekday() == 5: # 土曜日
                     if is_custom_holiday or is_public:
                         bg = QColor(255, 240, 240) # 休日指定、または祝日と重なっている場合は赤
                     else:
                         bg = QColor(240, 248, 255) # 通常の土曜日（青）
-                elif d.weekday() == 6 or is_public or is_custom_holiday: # 日曜日、祝日、カスタム休日
+                elif d.weekday() == 6 or is_public or is_custom_holiday: # 日曜日、祝日、カスタム祝日
                     bg = QColor(255, 240, 240) # 赤
             
             if bg:
