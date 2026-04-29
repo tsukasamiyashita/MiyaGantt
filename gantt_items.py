@@ -19,7 +19,6 @@ class GanttBarItem(QGraphicsRectItem):
         self.setAcceptHoverEvents(True)
         
         self.progress_item = QGraphicsRectItem(self)
-        # 初期テキストの設定（update_appearanceで上書きされるため空でも可）
         self.text_item = QGraphicsTextItem('', self)
         self.text_item.setDefaultTextColor(Qt.white)
         self.text_item.setZValue(1)
@@ -31,7 +30,6 @@ class GanttBarItem(QGraphicsRectItem):
         self.resizing_left = False
         self.resizing_right = False
         
-        # 期間データを直接参照として保持（移動後の再選択用）
         periods = self.task.get('periods', [])
         if self.period_index < len(periods):
             self.period_dict = periods[self.period_index]
@@ -83,29 +81,31 @@ class GanttBarItem(QGraphicsRectItem):
         self.progress_item.setRect(p_rect)
         self.progress_item.setBrush(QBrush(bc))
         self.progress_item.setPen(Qt.NoPen)
-        # ツールチップ更新用のデータ取得
+
         periods = self.task.get('periods')
         if periods is not None and self.period_index < len(periods):
             p_dict = periods[self.period_index]
         else:
             p_dict = self.task
 
-        # バー固有のテキスト（無ければ空）を表示
         bar_text = p_dict.get('text', '')
         self.text_item.setPlainText(bar_text)
         self.text_item.setPos(5, (self.rect().height() - self.text_item.boundingRect().height()) / 2)
 
         start_d = p_dict.get('start_date', '')
         end_d = p_dict.get('end_date', '')
-        self.setToolTip(f"タスク: {self.task.get('name','')}\n期間: {start_d}〜{end_d}")
+        mode_str = "生成モード" if self.task.get('mode') == 'auto' else "作成モード"
+        self.setToolTip(f"タスク: {self.task.get('name','')}\nモード: {mode_str}\n期間: {start_d}〜{end_d}")
 
     def hoverMoveEvent(self, event):
         x = event.pos().x()
         w = self.rect().width()
-        # 1日の場合や幅が狭い場合でも確実に反応するように調整
         margin = 12 if w <= self.app.day_width else 10
         margin = min(margin, w / 2 - 2)
-        if x < margin or x > w - margin:
+        
+        if self.task.get('mode') == 'auto':
+            self.setCursor(Qt.OpenHandCursor)
+        elif x < margin or x > w - margin:
             self.setCursor(Qt.SizeHorCursor)
         else:
             self.setCursor(Qt.OpenHandCursor)
@@ -122,23 +122,32 @@ class GanttBarItem(QGraphicsRectItem):
             margin = 12 if w <= self.app.day_width else 10
             margin = min(margin, w / 2 - 2)
             
-            if x < margin:
-                self.resizing_left = True
-            elif x > w - margin:
-                self.resizing_right = True
-            else:
+            if self.task.get('mode') == 'auto':
                 self.setCursor(Qt.ClosedHandCursor)
-                # 移動開始時の位置を保持
                 self.drag_start_scene_pos = event.scenePos()
-                # 選択されているすべてのアイテムの開始位置を記録
                 self.drag_item_starts = {}
                 selected_items = [it for it in self.scene().selectedItems() if isinstance(it, GanttBarItem)]
                 if self not in selected_items:
                     selected_items.append(self)
-                
                 for it in selected_items:
                     it.drag_start_pos = it.pos()
                     it.drag_start_row = it.row
+            else:
+                if x < margin:
+                    self.resizing_left = True
+                elif x > w - margin:
+                    self.resizing_right = True
+                else:
+                    self.setCursor(Qt.ClosedHandCursor)
+                    self.drag_start_scene_pos = event.scenePos()
+                    self.drag_item_starts = {}
+                    selected_items = [it for it in self.scene().selectedItems() if isinstance(it, GanttBarItem)]
+                    if self not in selected_items:
+                        selected_items.append(self)
+                    
+                    for it in selected_items:
+                        it.drag_start_pos = it.pos()
+                        it.drag_start_row = it.row
                     
         super().mousePressEvent(event)
 
@@ -158,7 +167,6 @@ class GanttBarItem(QGraphicsRectItem):
             if nr.width() + diff >= snap_x:
                 self.setRect(0, 0, nr.width() + diff, nr.height())
         elif hasattr(self, 'drag_start_scene_pos'):
-            # まとめて移動の処理
             delta = event.scenePos() - self.drag_start_scene_pos
             dx = round(delta.x() / snap_x) * snap_x
             dy = round(delta.y() / snap_y) * snap_y
@@ -169,11 +177,9 @@ class GanttBarItem(QGraphicsRectItem):
                 
             for it in selected_items:
                 if hasattr(it, 'drag_start_pos'):
-                    # 行移動の制限
                     new_row = it.drag_start_row + int(dy / snap_y)
                     max_row = len(self.app.visible_tasks_info) - 1 if self.app.visible_tasks_info else 0
                     new_row = max(0, min(max_row, new_row))
-                    
                     it.setPos(it.drag_start_pos.x() + dx, new_row * snap_y + 10)
                     it.update_appearance()
         else:
@@ -192,15 +198,13 @@ class GanttBarItem(QGraphicsRectItem):
         sd = self.app.min_date + timedelta(days=sx / self.app.day_width)
         ed = sd + timedelta(days=sw / self.app.day_width - 0.001)
 
-        if was_resizing:
-            # 単一バーのリサイズ確定処理
+        if was_resizing and self.task.get('mode') != 'auto':
             if 'periods' not in self.task:
                 self.task['periods'] = [{'start_date': self.task.get('start_date', ''), 'end_date': self.task.get('end_date', '')}]
             if 0 <= self.period_index < len(self.task['periods']):
                 self.task['periods'][self.period_index]['start_date'] = sd.strftime("%Y-%m-%d")
                 self.task['periods'][self.period_index]['end_date'] = ed.strftime("%Y-%m-%d")
         elif hasattr(self, 'drag_start_scene_pos'):
-            # まとめて移動の確定処理
             selected_items = [it for it in self.scene().selectedItems() if isinstance(it, GanttBarItem)]
             if self not in selected_items:
                 selected_items.append(self)
@@ -222,20 +226,27 @@ class GanttBarItem(QGraphicsRectItem):
                     'period_idx': it.period_index
                 })
             
-            # インデックスのずれを防ぐため降順にソートして取り出す
             moves.sort(key=lambda x: (x['task'] is self.task, x['period_idx']), reverse=True)
             
             for m in moves:
                 task = m['task']
-                if 'periods' in task and 0 <= m['period_idx'] < len(task['periods']):
-                    p = task['periods'].pop(m['period_idx'])
-                    p['start_date'] = m['start_date']
-                    p['end_date'] = m['end_date']
-                    m['period_data'] = p
+                if task.get('mode') == 'auto':
+                    task['auto_start_date'] = m['start_date']
+                    if 'periods' in task and len(task['periods']) > 0 and 0 <= m['period_idx'] < len(task['periods']):
+                        p = task['periods'].pop(m['period_idx'])
+                        p['start_date'] = m['start_date']
+                        m['period_data'] = p
+                    else:
+                        m['period_data'] = {'start_date': m['start_date']}
                 else:
-                    m['period_data'] = {'start_date': m['start_date'], 'end_date': m['end_date']}
+                    if 'periods' in task and 0 <= m['period_idx'] < len(task['periods']):
+                        p = task['periods'].pop(m['period_idx'])
+                        p['start_date'] = m['start_date']
+                        p['end_date'] = m['end_date']
+                        m['period_data'] = p
+                    else:
+                        m['period_data'] = {'start_date': m['start_date'], 'end_date': m['end_date']}
             
-            # 新しいタスクへ追加
             for m in moves:
                 target_idx = m['new_row']
                 if target_idx < len(self.app.visible_tasks_info):
@@ -252,8 +263,6 @@ class GanttBarItem(QGraphicsRectItem):
             
         super().mouseReleaseEvent(event)
         
-        # シーンのクリアによるクラッシュを防ぐため、UI更新を遅延させる
-        # また、移動したアイテムを再選択するために期間データの参照を保持
         selected_period_dicts = []
         selected_items = [it for it in self.scene().selectedItems() if isinstance(it, GanttBarItem)]
         if self not in selected_items:
@@ -263,9 +272,9 @@ class GanttBarItem(QGraphicsRectItem):
                 selected_period_dicts.append(it.period_dict)
 
         def finalize_ui():
+            self.app.recalculate_auto_tasks()
             self.app.sync_table_from_tasks()
             self.app.update_ui()
-            # 移動後のアイテムを再選択
             if selected_period_dicts:
                 for item in self.app.cs.items():
                     if isinstance(item, GanttBarItem) and hasattr(item, 'period_dict'):
@@ -275,10 +284,8 @@ class GanttBarItem(QGraphicsRectItem):
         QTimer.singleShot(0, finalize_ui)
 
     def mouseDoubleClickEvent(self, event):
-        # Prevent default double click which was old edit open
         super().mouseDoubleClickEvent(event)
         
-        # ダブルクリックでバー固有のテキストを編集
         if 'periods' not in self.task:
             self.task['periods'] = [{'start_date': self.task.get('start_date', ''), 'end_date': self.task.get('end_date', '')}]
             
@@ -290,7 +297,7 @@ class GanttBarItem(QGraphicsRectItem):
             if ok:
                 p_dict['text'] = text
                 self.update_appearance()
-                self.app.update_ui() # 全体を再描画して確実に反映させる
+                self.app.update_ui()
 
     def contextMenuEvent(self, event):
         menu = QMenu()
@@ -320,7 +327,6 @@ class HeaderScene(QGraphicsScene):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
-            # ヘッダーの下半分（日付・曜日エリア）をクリックした場合のみ反応
             y = event.scenePos().y()
             if 35 <= y <= 70:
                 x = event.scenePos().x()
@@ -348,16 +354,13 @@ class ChartScene(QGraphicsScene):
         self.selection_start = None
 
     def mousePressEvent(self, e):
-        # バー以外のアイテム（背景の土日祝日用矩形など）は無視して範囲選択を開始できるようにする
         items = self.items(e.scenePos(), Qt.IntersectsItemShape, Qt.DescendingOrder, self.app.chart_view.transform())
         gantt_item = next((it for it in items if isinstance(it, GanttBarItem)), None)
 
         if not gantt_item and e.button() == Qt.LeftButton:
             if e.modifiers() & Qt.ShiftModifier:
-                # 通常のタスク作成ドラッグ（Shiftキーが必要）
                 self.start_x = e.scenePos().x()
             else:
-                # 範囲選択の開始（デフォルト）
                 self.selection_start = e.scenePos()
                 self.selection_rect = self.addRect(QRectF(self.selection_start, self.selection_start), 
                                                  QPen(QColor(0, 120, 212), 1, Qt.DashLine), 
@@ -369,13 +372,12 @@ class ChartScene(QGraphicsScene):
         if self.selection_rect:
             rect = QRectF(self.selection_start, e.scenePos()).normalized()
             self.selection_rect.setRect(rect)
-            return # 他のアイテムへのイベントを抑制
+            return
         super().mouseMoveEvent(e)
 
     def mouseReleaseEvent(self, e):
         if self.selection_rect:
             rect = self.selection_rect.rect()
-            # 範囲内のバーを選択状態にする
             self.clearSelection()
             for item in self.items(rect):
                 if isinstance(item, GanttBarItem):
@@ -412,10 +414,13 @@ class ChartScene(QGraphicsScene):
                 day_idx = int(x / self.app.day_width)
                 d_str = (self.app.min_date + timedelta(days=day_idx)).strftime("%Y-%m-%d")
                 
-                if 'periods' not in task:
-                    task['periods'] = [{'start_date': task.get('start_date', ''), 'end_date': task.get('end_date', '')}]
-                
-                task['periods'].append({"start_date": d_str, "end_date": d_str, "text": ""})
+                if task.get('mode') == 'auto':
+                    task['auto_start_date'] = d_str
+                    self.app.recalculate_auto_tasks()
+                else:
+                    if 'periods' not in task:
+                        task['periods'] = [{'start_date': task.get('start_date', ''), 'end_date': task.get('end_date', '')}]
+                    task['periods'].append({"start_date": d_str, "end_date": d_str, "text": ""})
                 self.app.update_ui()
                 e.accept()
                 return
@@ -439,7 +444,10 @@ class ChartScene(QGraphicsScene):
                     add_period_action = None
                 else:
                     task_name = task.get('name', '無題')
-                    add_period_action = menu.addAction(f"「{task_name}」に期間を追加")
+                    if task.get('mode') == 'auto':
+                        add_period_action = menu.addAction(f"「{task_name}」の開始日をここに設定")
+                    else:
+                        add_period_action = menu.addAction(f"「{task_name}」に期間を追加")
                     add_task_in_group = None
             else:
                 add_period_action = None
@@ -451,19 +459,31 @@ class ChartScene(QGraphicsScene):
             d_str = (self.app.min_date + timedelta(days=day_idx)).strftime("%Y-%m-%d")
             
             if action == add_period_action and add_period_action:
-                if 'periods' not in task:
-                    task['periods'] = [{'start_date': task.get('start_date', ''), 'end_date': task.get('end_date', '')}]
-                task['periods'].append({"start_date": d_str, "end_date": d_str})
+                if task.get('mode') == 'auto':
+                    task['auto_start_date'] = d_str
+                    self.app.recalculate_auto_tasks()
+                else:
+                    if 'periods' not in task:
+                        task['periods'] = [{'start_date': task.get('start_date', ''), 'end_date': task.get('end_date', '')}]
+                    task['periods'].append({"start_date": d_str, "end_date": d_str})
                 self.app.update_ui()
             elif action == add_task_in_group and add_task_in_group:
+                mode = "auto" if self.app.mode_combo.currentIndex() == 1 else "manual"
                 new_task = {
                     "name": "新規タスク",
-                    "periods": [{"start_date": d_str, "end_date": d_str}],
+                    "mode": mode,
                     "progress": 0,
                     "color": "#0078d4"
                 }
-                # グループの直後に挿入
+                if mode == "auto":
+                    new_task["auto_start_date"] = d_str
+                    new_task["workload"] = 10.0
+                    new_task["periods"] = [{"start_date": d_str, "end_date": d_str}]
+                else:
+                    new_task["periods"] = [{"start_date": d_str, "end_date": d_str}]
+                    new_task["headcount"] = 1.0
                 self.app.tasks.insert(info['index'] + 1, new_task)
+                self.app.recalculate_auto_tasks()
                 self.app.update_ui()
         else:
             super().contextMenuEvent(e)
