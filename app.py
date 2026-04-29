@@ -981,11 +981,11 @@ class TaskTable(QTableWidget):
 
     def show_header_menu(self, pos):
         menu = QMenu(self)
-        column_names = ["選択マーク", "開閉ボタン", "タスク名", "進捗(%)", "人数", "期間指定", "色", "工数"]
+        column_names = ["選択マーク", "開閉ボタン", "タスク名", "種別", "進捗(%)", "人数/工数", "期間指定/開始日", "色", "集計列"]
         for i, name in enumerate(column_names):
             action = menu.addAction(name)
             action.setCheckable(True)
-            if i < 7:
+            if i < 8:
                 action.setChecked(not self.isColumnHidden(i))
             else:
                 action.setChecked(self.window().summary_visible)
@@ -1000,7 +1000,7 @@ class TaskTable(QTableWidget):
 class GanttApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("MiyaGantt - Professional Gantt Chart")
+        self.setWindowTitle("MiyaGantt v2.0.0 - Professional Gantt Chart")
         self.resize(1380, 850)
         self.tasks = []
         self.undo_stack = []
@@ -1165,8 +1165,8 @@ class GanttApp(QMainWindow):
         self.col_toggle_layout.setSpacing(2)
         self.col_actions = {}
         col_info = [
-            (0, "マーク"), (1, "開閉"), (3, "進捗"), (4, "人数"),
-            (5, "期間"), (6, "色"), (7, "工数")
+            (0, "マーク"), (1, "開閉"), (3, "種別"), (4, "進捗"), (5, "人数/工数"),
+            (6, "期間/開始日"), (7, "色"), (8, "集計列")
         ]
         for idx, name in col_info:
             btn = QPushButton(name) # 👁 を削除
@@ -1184,15 +1184,16 @@ class GanttApp(QMainWindow):
         self.col_toggle_layout.addStretch()
         self.left_layout.addLayout(self.col_toggle_layout)
 
-        self.table = TaskTable(0, 7) # 集計列は update_ui で動的に追加される
-        self.table.setHorizontalHeaderLabels(["", "", "タスク名", "進捗(%)", "人数", "期間指定", "色"])
+        self.table = TaskTable(0, 8) # 集計列は update_ui で動的に追加される
+        self.table.setHorizontalHeaderLabels(["", "", "タスク名", "種別", "進捗(%)", "人数/工数", "期間指定/開始日", "色"])
         self.table.setColumnWidth(0, 25)   # マーク
         self.table.setColumnWidth(1, 35)   # 開閉
-        self.table.setColumnWidth(3, 60)   # 進捗(%)
-        self.table.setColumnWidth(4, 50)   # 人数
-        self.table.setColumnWidth(5, 165)  # 期間指定
-        self.table.setColumnWidth(6, 40)   # 色
         self.table.setColumnWidth(2, 200)  # タスク名 (初期幅)
+        self.table.setColumnWidth(3, 40)   # 種別
+        self.table.setColumnWidth(4, 60)   # 進捗(%)
+        self.table.setColumnWidth(5, 70)   # 人数/工数
+        self.table.setColumnWidth(6, 165)  # 期間指定/開始日
+        self.table.setColumnWidth(7, 40)   # 色
         self.table.horizontalHeader().setFixedHeight(self.header_height)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Interactive)
         self.table.verticalHeader().setDefaultSectionSize(self.row_height)
@@ -1748,7 +1749,7 @@ class GanttApp(QMainWindow):
         
         self.table.blockSignals(True)
         # ヘッダーラベルの更新
-        labels = ["", "", "タスク名", "進捗(%)", "人数", "期間指定", "色"] + [h[2] for h in headers]
+        labels = ["", "", "タスク名", "種別", "進捗(%)", "人数/工数", "期間指定/開始日", "色"] + [h[2] for h in headers]
         # 現在の列数と合わない場合は調整（通常は update_ui で調整済み）
         if self.table.columnCount() != len(labels):
             self.table.setColumnCount(len(labels))
@@ -1758,7 +1759,7 @@ class GanttApp(QMainWindow):
         for r, info in enumerate(self.visible_tasks_info):
             t = info['task']
             for i, (h_start, h_end, _) in enumerate(headers):
-                col_idx = 7 + i
+                col_idx = 8 + i
                 item_s = self.table.item(r, col_idx)
                 if not item_s:
                     item_s = QTableWidgetItem()
@@ -1814,7 +1815,7 @@ class GanttApp(QMainWindow):
             t = info['task']
             if t.get('is_group'):
                 # グループの場合も集計を更新
-                person_item = self.table.item(r, 4)
+                person_item = self.table.item(r, 5)
                 if person_item:
                     total_p = 0
                     for i in range(info['index'] + 1, len(self.tasks)):
@@ -1823,7 +1824,7 @@ class GanttApp(QMainWindow):
                     person_item.setText(str(total_p))
 
                 for i, (h_start, h_end, _) in enumerate(headers):
-                    col_idx = 7 + i
+                    col_idx = 8 + i
                     item_s = self.table.item(r, col_idx)
                     if item_s:
                         day_map = self.get_task_day_map_in_range(t, info['index'], h_start, h_end)
@@ -1838,17 +1839,23 @@ class GanttApp(QMainWindow):
                 e = p['end_date'].replace('-', '/')
                 p_strs.append(f"{s}-{e}")
             
-            person_item = self.table.item(r, 4)
+            person_item = self.table.item(r, 5)
             if person_item:
-                person_item.setText(str(t.get('person_count', 1)))
+                if t.get('task_type') == 'generation':
+                    person_item.setText(str(t.get('gen_workload', 1)))
+                else:
+                    person_item.setText(str(t.get('person_count', 1)))
                 
-            period_item = self.table.item(r, 5)
+            period_item = self.table.item(r, 6)
             if period_item:
-                period_item.setText(", ".join(p_strs))
+                if t.get('task_type') == 'generation':
+                    period_item.setText(t.get('gen_start_date', ''))
+                else:
+                    period_item.setText(", ".join(p_strs))
             
             # 動的な集計列の更新
             for i, (h_start, h_end, _) in enumerate(headers):
-                col_idx = 7 + i
+                col_idx = 8 + i
                 item_s = self.table.item(r, col_idx)
                 if item_s:
                     day_map = self.get_task_day_map_in_range(t, info['index'], h_start, h_end)
@@ -1879,11 +1886,125 @@ class GanttApp(QMainWindow):
             self.tasks.append(t)
         self.update_ui()
 
+    def recalculate_generation_tasks(self):
+        current_group_idx = -1
+        for i, t in enumerate(self.tasks):
+            if t.get('is_group'):
+                current_group_idx = i
+            t['_group_idx'] = current_group_idx
+
+        groups = {}
+        for t in self.tasks:
+            if t.get('is_group'): continue
+            g_idx = t.get('_group_idx', -1)
+            if g_idx not in groups:
+                groups[g_idx] = {'creation': [], 'generation': []}
+            if t.get('task_type') == 'generation':
+                groups[g_idx]['generation'].append(t)
+            else:
+                groups[g_idx]['creation'].append(t)
+
+        for g_idx, data in groups.items():
+            creation_tasks = data['creation']
+            generation_tasks = data['generation']
+            if not generation_tasks:
+                continue
+
+            capacity = {}
+            for ct in creation_tasks:
+                for p in ct.get('periods', []):
+                    if not p.get('start_date') or not p.get('end_date'): continue
+                    try:
+                        sd = datetime.strptime(p['start_date'], "%Y-%m-%d")
+                        ed = datetime.strptime(p['end_date'], "%Y-%m-%d")
+                        c = ct.get('person_count', 1)
+                        curr = sd
+                        while curr <= ed:
+                            ds = curr.strftime("%Y-%m-%d")
+                            capacity[ds] = capacity.get(ds, 0) + c
+                            curr += timedelta(days=1)
+                    except ValueError:
+                        pass
+
+            valid_gts = []
+            for gt in generation_tasks:
+                gt['_rem'] = float(gt.get('gen_workload', 0))
+                sd_str = gt.get('gen_start_date', '')
+                gt['_actual_start'] = None
+                gt['_actual_end'] = None
+                gt['person_count'] = 0 # Avoid double counting in summary
+                if not sd_str or gt['_rem'] <= 0:
+                    continue
+                try:
+                    gt['_sd'] = datetime.strptime(sd_str, "%Y-%m-%d")
+                    valid_gts.append(gt)
+                except ValueError:
+                    continue
+
+            if not valid_gts:
+                for gt in generation_tasks:
+                    if gt.get('gen_start_date') and gt.get('gen_workload', 0) <= 0:
+                        sd = gt['gen_start_date']
+                        gt['periods'] = [{'start_date': sd, 'end_date': sd, 'color': gt.get('color', '#0078d4')}]
+                    elif not gt.get('gen_start_date'):
+                        gt['periods'] = []
+                continue
+
+            current_date = min(gt['_sd'] for gt in valid_gts)
+            end_limit = current_date + timedelta(days=3650)
+            cap_copy = capacity.copy()
+
+            while valid_gts and current_date <= end_limit:
+                ds = current_date.strftime("%Y-%m-%d")
+                daily_cap = cap_copy.get(ds, 0)
+                
+                active = [gt for gt in valid_gts if gt['_sd'] <= current_date]
+                
+                if active and daily_cap > 0:
+                    active.sort(key=lambda x: x['_rem'])
+                    rem_cap = daily_cap
+                    
+                    while rem_cap > 0.001 and active:
+                        share = rem_cap / len(active)
+                        if active[0]['_rem'] <= share + 0.001:
+                            used = active[0]['_rem']
+                            active[0]['_rem'] = 0
+                            if active[0]['_actual_start'] is None:
+                                active[0]['_actual_start'] = ds
+                            active[0]['_actual_end'] = ds
+                            rem_cap -= used
+                            active.pop(0)
+                        else:
+                            for gt in active:
+                                gt['_rem'] -= share
+                                if gt['_actual_start'] is None:
+                                    gt['_actual_start'] = ds
+                                gt['_actual_end'] = ds
+                            rem_cap = 0
+                
+                valid_gts = [gt for gt in valid_gts if gt['_rem'] > 0.001]
+                current_date += timedelta(days=1)
+
+            for gt in generation_tasks:
+                if gt.get('_actual_start'):
+                    sd = gt['_actual_start']
+                    ed = gt['_actual_end'] if gt.get('_actual_end') else sd
+                    color = gt.get('color', '#0078d4')
+                    gt['periods'] = [{'start_date': sd, 'end_date': ed, 'color': color, 'text': f"{gt.get('gen_workload')}工数"}]
+                else:
+                    if gt.get('gen_start_date'):
+                        sd = gt['gen_start_date']
+                        gt['periods'] = [{'start_date': sd, 'end_date': sd, 'color': gt.get('color', '#0078d4'), 'text': '未着手'}]
+                    else:
+                        gt['periods'] = []
+
     def update_ui(self, refresh_chart=True):
         if getattr(self, '_updating_ui', False):
             return
         self._updating_ui = True
         try:
+            self.recalculate_generation_tasks()
+            
             self.visible_tasks_info = self.get_visible_tasks_info()
             self.table.blockSignals(True)
             
@@ -1894,11 +2015,11 @@ class GanttApp(QMainWindow):
             threshold_date = self.get_threshold_date(visible_start)
             
             headers = self.get_summary_headers(threshold_date)
-            base_col_count = 7
+            base_col_count = 8
             total_cols = base_col_count + len(headers)
             self.table.setColumnCount(total_cols)
             
-            labels = ["", "", "タスク名", "進捗(%)", "人数", "期間指定", "色"] + [h[2] for h in headers]
+            labels = ["", "", "タスク名", "種別", "進捗(%)", "人数/工数", "期間指定/開始日", "色"] + [h[2] for h in headers]
             self.table.setHorizontalHeaderLabels(labels)
             
             new_rows = len(self.visible_tasks_info)
@@ -1948,31 +2069,40 @@ class GanttApp(QMainWindow):
                     f = item_name.font(); f.setBold(True); item_name.setFont(f)
                     item_name.setBackground(QColor(242, 242, 242))
                 
-                # 3: Progress
-                item_prog = self.table.item(r, 3)
+                # 3: Type
+                item_type = self.table.item(r, 3)
+                item_type.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+                item_type.setForeground(QColor(51, 51, 51))
+                item_type.setBackground(QColor(255, 255, 255))
+                
+                # 4: Progress
+                item_prog = self.table.item(r, 4)
                 item_prog.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
                 item_prog.setForeground(QColor(51, 51, 51))
                 item_prog.setBackground(QColor(255, 255, 255))
                 
-                # 4: Person Count
-                item_person = self.table.item(r, 4)
+                # 5: Person Count / Workload
+                item_person = self.table.item(r, 5)
                 item_person.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
                 item_person.setForeground(QColor(51, 51, 51))
                 item_person.setBackground(QColor(255, 255, 255))
                 
-                # 5: Period
-                item_period = self.table.item(r, 5)
+                # 6: Period / Start Date
+                item_period = self.table.item(r, 6)
                 item_period.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
                 item_period.setForeground(QColor(51, 51, 51))
                 item_period.setBackground(QColor(255, 255, 255))
                 
-                # 6: Color
-                item_color = self.table.item(r, 6)
+                # 7: Color
+                item_color = self.table.item(r, 7)
                 item_color.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
                 item_color.setForeground(QColor(51, 51, 51))
                 item_color.setBackground(QColor(255, 255, 255))
                 
                 if is_group:
+                    item_type.setText("")
+                    item_type.setBackground(QColor(242, 242, 242))
+                    
                     item_prog.setText("")
                     item_prog.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                     
@@ -1991,28 +2121,42 @@ class GanttApp(QMainWindow):
                     item_color.setBackground(QColor(200, 200, 200))
                     item_color.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                 else:
-                    item_prog.setText(str(t.get('progress', 0)))
-                    item_prog.setTextAlignment(Qt.AlignCenter)
+                    ttype = t.get('task_type', 'creation')
+                    item_type.setText("生成" if ttype == 'generation' else "作成")
+                    item_type.setTextAlignment(Qt.AlignCenter)
+                    item_type.setToolTip("ダブルクリックで変更")
                     
-                    item_person.setText(str(t.get('person_count', 1)))
-                    item_person.setTextAlignment(Qt.AlignCenter)
-                    
-                    periods = t.get('periods', [])
-                    p_strs = []
-                    for p in periods:
-                        if not p.get('start_date') or not p.get('end_date'): continue
-                        s = p['start_date'].replace('-', '/')
-                        e = p['end_date'].replace('-', '/')
-                        p_strs.append(f"{s}-{e}")
-                    item_period.setText(", ".join(p_strs))
-                    
+                    if ttype == 'generation':
+                        item_prog.setText("")
+                        item_prog.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+                        
+                        item_person.setText(str(t.get('gen_workload', 1)))
+                        item_person.setTextAlignment(Qt.AlignCenter)
+                        
+                        item_period.setText(t.get('gen_start_date', ''))
+                    else:
+                        item_prog.setText(str(t.get('progress', 0)))
+                        item_prog.setTextAlignment(Qt.AlignCenter)
+                        
+                        item_person.setText(str(t.get('person_count', 1)))
+                        item_person.setTextAlignment(Qt.AlignCenter)
+                        
+                        periods = t.get('periods', [])
+                        p_strs = []
+                        for p in periods:
+                            if not p.get('start_date') or not p.get('end_date'): continue
+                            s = p['start_date'].replace('-', '/')
+                            e = p['end_date'].replace('-', '/')
+                            p_strs.append(f"{s}-{e}")
+                        item_period.setText(", ".join(p_strs))
+                        
                     item_color.setText("")
                     item_color.setBackground(QColor(t.get('color', '#0078d4')))
                     item_color.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
 
-                # 7 onwards: Dynamic Summary Columns
+                # 8 onwards: Dynamic Summary Columns
                 for i, (h_start, h_end, _) in enumerate(headers):
-                    col_idx = 7 + i
+                    col_idx = 8 + i
                     item_s = self.table.item(r, col_idx)
                     item_s.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                     item_s.setForeground(QColor(51, 51, 51))
@@ -2054,8 +2198,8 @@ class GanttApp(QMainWindow):
         
         if col == 2: # Name
             t['name'] = item.text().strip()
-        elif col == 3: # Progress
-            if t.get('is_group'): return
+        elif col == 4: # Progress
+            if t.get('is_group') or t.get('task_type') == 'generation': return
             try:
                 prog = int(item.text().replace('%', '').strip())
                 t['progress'] = max(0, min(100, prog))
@@ -2064,25 +2208,42 @@ class GanttApp(QMainWindow):
             self.table.blockSignals(True)
             item.setText(str(t['progress']))
             self.table.blockSignals(False)
-        elif col == 4: # Person Count
+        elif col == 5: # Person Count / Workload
             if t.get('is_group'): return
             try:
-                count = int(item.text().strip())
-                t['person_count'] = max(1, count)
+                val = float(item.text().strip()) if t.get('task_type') == 'generation' else int(item.text().strip())
+                val = max(0, val)
+                if t.get('task_type') == 'generation':
+                    t['gen_workload'] = val
+                else:
+                    t['person_count'] = max(1, int(val))
             except ValueError:
-                t['person_count'] = 1
+                if t.get('task_type') != 'generation':
+                    t['person_count'] = 1
             self.table.blockSignals(True)
-            item.setText(str(t['person_count']))
-            self.table.blockSignals(False)
-            self.update_ui(refresh_chart=False) # 集計のみ更新
-        elif col == 5: # Period
-            if t.get('is_group'): return
-            period_str = item.text()
-            parsed = self.get_periods_from_string(period_str)
-            if parsed:
-                t['periods'] = parsed
+            if t.get('task_type') == 'generation':
+                item.setText(str(t.get('gen_workload', 1)))
             else:
-                QMessageBox.warning(self, "エラー", "期間の形式が正しくありません。\n例: 04/01-04/05")
+                item.setText(str(t.get('person_count', 1)))
+            self.table.blockSignals(False)
+            self.update_ui(refresh_chart=False) # 集計と生成タスク再計算
+        elif col == 6: # Period / Start Date
+            if t.get('is_group'): return
+            if t.get('task_type') == 'generation':
+                parsed = self.parse_date(item.text())
+                if parsed:
+                    t['gen_start_date'] = parsed
+                else:
+                    QMessageBox.warning(self, "エラー", "日付の形式が正しくありません。\n例: 04/01")
+                self.update_ui()
+                return
+            else:
+                period_str = item.text()
+                parsed = self.get_periods_from_string(period_str)
+                if parsed:
+                    t['periods'] = parsed
+                else:
+                    QMessageBox.warning(self, "エラー", "期間の形式が正しくありません。\n例: 04/01-04/05")
         
         self.draw_chart()
 
@@ -2101,7 +2262,22 @@ class GanttApp(QMainWindow):
         info = self.visible_tasks_info[row]
         t = info['task']
         
-        if col == 6: # Color column
+        if col == 3 and not t.get('is_group'): # Type
+            self.save_state()
+            if t.get('task_type') == 'generation':
+                t['task_type'] = 'creation'
+            else:
+                t['task_type'] = 'generation'
+                if 'gen_workload' not in t:
+                    t['gen_workload'] = t.get('person_count', 1)
+                if 'gen_start_date' not in t:
+                    if t.get('periods') and t['periods'][0].get('start_date'):
+                        t['gen_start_date'] = t['periods'][0]['start_date']
+                    else:
+                        t['gen_start_date'] = datetime.now().strftime("%Y-%m-%d")
+            self.update_ui()
+            
+        elif col == 7: # Color column
             color_groups = self.get_color_groups()
             
             dlg = ColorGridDialog(color_groups, self)
@@ -2489,12 +2665,12 @@ class GanttApp(QMainWindow):
         return f"計{total}工数 ({', '.join(parts)})"
 
     def toggle_column_visibility(self, idx, visible):
-        if idx < 7:
+        if idx < 8:
             self.table.setColumnHidden(idx, not visible)
         else:
             self.summary_visible = visible
-            # 7列目以降の全列をトグル
-            for i in range(7, self.table.columnCount()):
+            # 8列目以降の全列をトグル
+            for i in range(8, self.table.columnCount()):
                 self.table.setColumnHidden(i, not visible)
         
         if idx in self.col_actions:
@@ -2514,7 +2690,7 @@ class GanttApp(QMainWindow):
         path = os.path.join(config_dir, 'config.json')
         
         column_visibility = {}
-        for i in range(8):
+        for i in range(9):
             column_visibility[str(i)] = not self.table.isColumnHidden(i)
         
         config = {
