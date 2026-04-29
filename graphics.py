@@ -504,7 +504,6 @@ class HeaderScene(QGraphicsScene):
             return
 
         if event.button() == Qt.LeftButton:
-
             # ヘッダーの下半分（日付・曜日エリア）をクリックした場合のみ反応
             y = event.scenePos().y()
             if 35 <= y <= 70:
@@ -569,7 +568,8 @@ class ChartScene(QGraphicsScene):
                     self.start_x = 0
             
             # 重要：背景クリック時は標準のイベント（super）を呼ばず、ここで処理を終了する
-            # これにより、背景色の一時的な変化やチラつき、不要な選択解除を完全に防ぐ
+            # これにより、背景色の一時的な変化やチラつき、不要な選択解除を完全に防ぐ。
+            # ChartScene側でのクリックはカスタム休日のトグル処理を行わないため、色が変わることはない。
             e.accept()
             return
 
