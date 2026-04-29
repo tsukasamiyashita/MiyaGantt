@@ -1661,116 +1661,7 @@ class GanttApp(QMainWindow):
         self.btn_redo.setToolTip("進む" if can_redo else "進む (やり直しできる操作がありません)")
 
     def get_visible_tasks_info(self):
-        visible = []
-        skip_until_next_group = False
-        for i, t in enumerate(self.tasks):
-            if t.get('is_group'):
-                visible.append({'index': i, 'task': t, 'indent': 0})
-                skip_until_next_group = t.get('collapsed', False)
-            else:
-                if not skip_until_next_group:
-                    # 前方にグループがあるか確認
-                    has_group = any(self.tasks[j].get('is_group') for j in range(i))
-                    visible.append({'index': i, 'task': t, 'indent': 1 if has_group else 0})
-        return visible
-
-
-    def get_task_dates(self, task):
-        s_dates = []
-        e_dates = []
-        periods = task.get('periods', [])
-        if not periods and 'start_date' in task:
-            periods = [{'start_date': task['start_date'], 'end_date': task['end_date']}]
-        for p in periods:
-            if p.get('start_date'): s_dates.append(p['start_date'])
-            if p.get('end_date'): e_dates.append(p['end_date'])
-        if s_dates and e_dates:
-            return min(s_dates), max(e_dates)
-        return "", ""
-
-    def get_threshold_date(self, visible_start):
-        if self.display_unit == 0: # 週間
-            return visible_start + timedelta(days=2)
-        elif self.display_unit == 1: # 月間
-            return visible_start + timedelta(days=7)
-        else: # 年間
-            # 1ヶ月前 (約30日)
-            return visible_start + timedelta(days=30)
-
-    def get_summary_headers(self, base_date=None, count=None):
-        if base_date is None: base_date = self.min_date
-        if count is None:
-            # 1画面の表示枠（ズーム設定）に合わせて集計列の数を決定する
-            if self.zoom_unit == 0: # 週間
-                visible_days = self.zoom_count * 7
-            elif self.zoom_unit == 1: # 月間
-                visible_days = self.zoom_count * 30.416
-            else: # 年間
-                visible_days = self.zoom_count * 365.25
-                
-            if self.display_unit == 0: # 週間
-                count = max(1, round(visible_days / 7))
-            elif self.display_unit == 1: # 月間
-                count = max(1, round(visible_days / 30.416))
-            else: # 年間
-                count = max(1, round(visible_days / 365.25))
-        
-        headers = []
-        curr = base_date
-        unit_type = ['week', 'month', 'year'][self.display_unit]
-        
-        if unit_type == 'week':
-            # 週の初め（月曜日）に合わせる
-            curr = curr - timedelta(days=curr.weekday())
-            for _ in range(count):
-                end_d = curr + timedelta(days=6)
-                label = f"{curr.strftime('%m/%d')}~{end_d.strftime('%m/%d')}"
-                headers.append((curr, end_d, label))
-                curr += timedelta(days=7)
-        elif unit_type == 'month':
-            curr = curr.replace(day=1)
-            for _ in range(count):
-                last_day = calendar.monthrange(curr.year, curr.month)[1]
-                headers.append((curr, curr.replace(day=last_day), curr.strftime("%Y/%m")))
-                m = curr.month + 1
-                y = curr.year
-                if m > 12: m = 1; y += 1
-                curr = datetime(y, m, 1)
-        elif unit_type == 'year':
-            curr = curr.replace(month=1, day=1)
-            for _ in range(count):
-                headers.append((curr, curr.replace(month=12, day=31), curr.strftime("%Y年")))
-                curr = curr.replace(year=curr.year + 1)
-        return headers
-
-    def sync_summary_to_scroll(self, base_date):
-        if not hasattr(self, 'table'): return
-        headers = self.get_summary_headers(base_date)
-        
-        self.table.blockSignals(True)
-        # ヘッダーラベルの更新
-        labels = ["", "", "タスク名", "種別", "進捗(%)", "人数/工数", "期間指定/開始日", "色"] + [h[2] for h in headers]
-        # 現在の列数と合わない場合は調整（通常は update_ui で調整済み）
-        if self.table.columnCount() != len(labels):
-            self.table.setColumnCount(len(labels))
-        self.table.setHorizontalHeaderLabels(labels)
-        
-        # 各行の集計値を更新
-        for r, info in enumerate(self.visible_tasks_info):
-            t = info['task']
-            for i, (h_start, h_end, _) in enumerate(headers):
-                col_idx = 8 + i
-                item_s = self.table.item(r, col_idx)
-                if not item_s:
-                    item_s = QTableWidgetItem()
-                    self.table.setItem(r, col_idx, item_s)
-                
-                item_s.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
-                item_s.setTextAlignment(Qt.AlignCenter)
-                day_map = self.get_task_day_map_in_range(t, info['index'], h_start, h_end)
-                item_s.setText(self.format_total_days(day_map))
-                
-                if t.get('is_group'):
+        visible                 if t.get('is_group'):
                     item_s.setBackground(QColor(242, 242, 242))
                 else:
                     item_s.setBackground(QColor(255, 255, 255))
@@ -1887,11 +1778,127 @@ class GanttApp(QMainWindow):
         self.update_ui()
 
     def recalculate_generation_tasks(self):
-        current_group_idx = -1
-        for i, t in enumerate(self.tasks):
-            if t.get('is_group'):
-                current_group_idx = i
-            t['_group_idx'] = current_group_idx
+        try:
+            current_group_idx = -1
+            for i, t in enumerate(self.tasks):
+                if t.get('is_group'):
+                    current_group_idx = i
+                t['_group_idx'] = current_group_idx
+
+            groups = {}
+            for t in self.tasks:
+                if t.get('is_group'): continue
+                g_idx = t.get('_group_idx', -1)
+                if g_idx not in groups:
+                    groups[g_idx] = {'creation': [], 'generation': []}
+                if t.get('task_type') == 'generation':
+                    groups[g_idx]['generation'].append(t)
+                else:
+                    groups[g_idx]['creation'].append(t)
+
+            for g_idx, data in groups.items():
+                creation_tasks = data['creation']
+                generation_tasks = data['generation']
+                if not generation_tasks:
+                    continue
+
+                capacity = {}
+                for ct in creation_tasks:
+                    for p in ct.get('periods', []):
+                        if not p.get('start_date') or not p.get('end_date'): continue
+                        try:
+                            sd = datetime.strptime(p['start_date'], "%Y-%m-%d")
+                            ed = datetime.strptime(p['end_date'], "%Y-%m-%d")
+                            c = ct.get('person_count', 1)
+                            curr = sd
+                            while curr <= ed:
+                                ds = curr.strftime("%Y-%m-%d")
+                                capacity[ds] = capacity.get(ds, 0) + c
+                                curr += timedelta(days=1)
+                        except ValueError:
+                            pass
+
+                valid_gts = []
+                for gt in generation_tasks:
+                    gt['_rem'] = float(gt.get('gen_workload', 0))
+                    sd_str = gt.get('gen_start_date', '')
+                    gt['_actual_start'] = None
+                    gt['_actual_end'] = None
+                    gt['person_count'] = 0 # Avoid double counting in summary
+                    if not sd_str or gt['_rem'] <= 0:
+                        continue
+                    try:
+                        gt['_sd'] = datetime.strptime(sd_str, "%Y-%m-%d")
+                        valid_gts.append(gt)
+                    except ValueError:
+                        continue
+
+                if not valid_gts:
+                    for gt in generation_tasks:
+                        if gt.get('gen_start_date') and gt.get('gen_workload', 0) <= 0:
+                            sd = gt['gen_start_date']
+                            gt['periods'] = [{'start_date': sd, 'end_date': sd, 'color': gt.get('color', '#0078d4')}]
+                        elif not gt.get('gen_start_date'):
+                            gt['periods'] = []
+                    continue
+
+                current_date = min(gt['_sd'] for gt in valid_gts)
+                end_limit = current_date + timedelta(days=3650)
+                cap_copy = capacity.copy()
+
+                while valid_gts and current_date <= end_limit:
+                    ds = current_date.strftime("%Y-%m-%d")
+                    daily_cap = cap_copy.get(ds, 0)
+                    
+                    active = [gt for gt in valid_gts if gt['_sd'] <= current_date]
+                    
+                    if active and daily_cap > 0:
+                        active.sort(key=lambda x: x['_rem'])
+                        rem_cap = daily_cap
+                        
+                        while rem_cap > 0.001 and active:
+                            share = rem_cap / len(active)
+                            if active[0]['_rem'] <= share + 0.001:
+                                used = active[0]['_rem']
+                                active[0]['_rem'] = 0
+                                if active[0]['_actual_start'] is None:
+                                    active[0]['_actual_start'] = ds
+                                active[0]['_actual_end'] = ds
+                                rem_cap -= used
+                                active.pop(0)
+                            else:
+                                for gt in active:
+                                    gt['_rem'] -= share
+                                    if gt['_actual_start'] is None:
+                                        gt['_actual_start'] = ds
+                                    gt['_actual_end'] = ds
+                                rem_cap = 0
+                    
+                    valid_gts = [gt for gt in valid_gts if gt['_rem'] > 0.001]
+                    current_date += timedelta(days=1)
+
+                for gt in generation_tasks:
+                    if gt.get('_actual_start'):
+                        sd = gt['_actual_start']
+                        ed = gt['_actual_end'] if gt.get('_actual_end') else sd
+                        color = gt.get('color', '#0078d4')
+                        gt['periods'] = [{'start_date': sd, 'end_date': ed, 'color': color, 'text': f"{gt.get('gen_workload')}工数"}]
+                    else:
+                        if gt.get('gen_start_date'):
+                            sd = gt['gen_start_date']
+                            gt['periods'] = [{'start_date': sd, 'end_date': sd, 'color': gt.get('color', '#0078d4'), 'text': '未着手'}]
+                        else:
+                            gt['periods'] = []
+        finally:
+            # シリアライズエラー防止のため、一時的な計算用キー（_で始まるもの）をすべて削除
+            for t in self.tasks:
+                temp_keys = [k for k in t.keys() if k.startswith('_')]
+                for k in temp_keys:
+                    del t[k]除
+            for t in self.tasks:
+                temp_keys = [k for k in t.keys() if k.startswith('_')]
+                for k in temp_keys:
+                    del t[k]idx
 
         groups = {}
         for t in self.tasks:
@@ -1998,8 +2005,9 @@ class GanttApp(QMainWindow):
                     else:
                         gt['periods'] = []
 
+        # シリアライズエラー防止のため、一時的な計算用キー（_で始まるもの）をすべて削除
         for t in self.tasks:
-            temp_keys = [k for k in t.keys() if str(k).startswith('_')]
+            temp_keys = [k for k in t.keys() if k.startswith('_')]
             for k in temp_keys:
                 del t[k]
 
@@ -2610,7 +2618,7 @@ class GanttApp(QMainWindow):
                     "tasks": self.tasks
                 }
                 with open(p, 'w', encoding='utf-8') as f:
-                    json.dump(data_to_save, f, ensure_ascii=False, indent=4, default=str)
+                    json.dump(data_to_save, f, ensure_ascii=False, indent=4)
                 QMessageBox.information(self, "成功", "保存しました。")
             except Exception as e:
                 QMessageBox.critical(self, "エラー", f"保存失敗: {e}")
@@ -2711,7 +2719,7 @@ class GanttApp(QMainWindow):
         
         try:
             with open(path, 'w', encoding='utf-8') as f:
-                json.dump(config, f, ensure_ascii=False, indent=4, default=str)
+                json.dump(config, f, ensure_ascii=False, indent=4)
             QMessageBox.information(self, "完了", f"基本設定を保存しました:\n{path}")
         except Exception as e:
             QMessageBox.warning(self, "エラー", f"設定の保存に失敗しました: {e}")
