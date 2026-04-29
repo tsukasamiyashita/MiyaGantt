@@ -537,25 +537,13 @@ class GanttApp(QMainWindow):
             groups_to_process.append((temp_group, temp_tasks))
             
         for g, tasks in groups_to_process:
+            # 作成モードの手動リソース使用は無視し、純粋にグループのリソース枠だけで計算
             group_res = float(g.get('headcount', 1.0)) if g else 1.0
             
-            used_res = {}
             auto_tasks = []
             
             for t in tasks:
-                if t.get('mode', 'manual') == 'manual':
-                    hc = float(t.get('headcount', 1.0))
-                    for p in t.get('periods', []):
-                        if not p.get('start_date') or not p.get('end_date'): continue
-                        try:
-                            sd = datetime.strptime(p['start_date'], "%Y-%m-%d")
-                            ed = datetime.strptime(p['end_date'], "%Y-%m-%d")
-                            for i in range((ed - sd).days + 1):
-                                d_str = (sd + timedelta(days=i)).strftime("%Y-%m-%d")
-                                used_res[d_str] = used_res.get(d_str, 0.0) + hc
-                        except ValueError:
-                            pass
-                else:
+                if t.get('mode', 'manual') == 'auto':
                     sd_str = t.get('auto_start_date')
                     if not sd_str:
                         sd_str = self.min_date.strftime("%Y-%m-%d")
@@ -580,12 +568,12 @@ class GanttApp(QMainWindow):
             days_simulated = 0
             
             while any(at['rem_work'] > 0 for at in auto_tasks) and days_simulated < max_days:
-                d_str = current_date.strftime("%Y-%m-%d")
-                avail_res = max(0.0, group_res - used_res.get(d_str, 0.0))
+                # 0以下の場合は最低限の進捗(0.001)を保証して無限ループを防ぐ
+                avail_res = max(0.001, group_res)
                 
                 active_tasks = [at for at in auto_tasks if at['start'] <= current_date and at['rem_work'] > 0]
                 
-                if active_tasks and avail_res > 0.001:
+                if active_tasks:
                     unallocated_res = avail_res
                     tasks_to_allocate = active_tasks.copy()
                     
