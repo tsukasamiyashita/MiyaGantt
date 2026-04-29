@@ -600,34 +600,54 @@ class ChartScene(QGraphicsScene):
                 if abs(e.scenePos().x() - self.start_x) > (self.app.day_width * 0.1):
                     self.app.create_task_from_drag(self.start_x, e.scenePos().x(), e.scenePos().y())
             self.start_x = 0
+            
+        # アイテムの特定（背景クリック時はデフォルトイベントを呼ばないようにするため）
+        item = self.itemAt(e.scenePos(), self.app.chart_view.transform())
+        target_bar = None
+        if item:
+            temp = item
+            while temp:
+                if isinstance(temp, GanttBarItem):
+                    target_bar = temp
+                    break
+                temp = temp.parentItem()
+
+        # 背景（バー以外）のリリースイベントは、意図しないハイライトや選択による無色化を防ぐためにデフォルト処理を呼ばない
+        if not target_bar:
+            e.accept()
+            return
+            
         super().mouseReleaseEvent(e)
 
     def mouseDoubleClickEvent(self, e):
         items = self.items(e.scenePos(), Qt.IntersectsItemShape, Qt.DescendingOrder, self.app.chart_view.transform())
         gantt_item = next((it for it in items if isinstance(it, GanttBarItem)), None)
             
-        if not gantt_item and e.button() == Qt.LeftButton:
+        if not gantt_item:
+            if e.button() == Qt.LeftButton:
+                y = e.scenePos().y()
+                row = int(y / self.app.row_height)
+                if 0 <= row < len(self.app.visible_tasks_info):
+                    info = self.app.visible_tasks_info[row]
+                    task = info['task']
+                    if not task.get('is_group'):
+                        x = e.scenePos().x()
+                        day_idx = int(x / self.app.day_width)
+                        d_str = (self.app.min_date + timedelta(days=day_idx)).strftime("%Y-%m-%d")
+                        
+                        if 'periods' not in task:
+                            task['periods'] = [{'start_date': task.get('start_date', ''), 'end_date': task.get('end_date', '')}]
+                        
+                        self.app.save_state()
+                        task['periods'].append({"start_date": d_str, "end_date": d_str, "text": ""})
+                        
+                        # 描画のタイムラグ（背景の一時的な消失）を防ぐため、即時更新に変更
+                        self.app.update_ui()
+            
+            # 背景ダブルクリック時は常にイベントをここで止め、意図しないデフォルト描画処理を防ぐ
+            e.accept()
+            return
 
-            y = e.scenePos().y()
-            row = int(y / self.app.row_height)
-            if 0 <= row < len(self.app.visible_tasks_info):
-                info = self.app.visible_tasks_info[row]
-                task = info['task']
-                if task.get('is_group'):
-                    return
-
-                x = e.scenePos().x()
-                day_idx = int(x / self.app.day_width)
-                d_str = (self.app.min_date + timedelta(days=day_idx)).strftime("%Y-%m-%d")
-                
-                if 'periods' not in task:
-                    task['periods'] = [{'start_date': task.get('start_date', ''), 'end_date': task.get('end_date', '')}]
-                
-                self.app.save_state()
-                task['periods'].append({"start_date": d_str, "end_date": d_str, "text": ""})
-                QTimer.singleShot(100, self.app.update_ui)
-                e.accept()
-                return
         super().mouseDoubleClickEvent(e)
 
     def contextMenuEvent(self, e):
