@@ -172,8 +172,8 @@ class GanttApp(QMainWindow):
         self.col_toggle_layout.setSpacing(2)
         self.col_actions = {}
         col_info = [
-            (0, "マーク"), (1, "開閉"), (3, "進捗"), 
-            (4, "期間"), (5, "色"), (6, "合計")
+            (0, "マーク"), (1, "開閉"), (3, "人数"), (4, "進捗"), 
+            (5, "期間"), (6, "色"), (7, "合計")
         ]
         for idx, name in col_info:
             btn = QPushButton(name)
@@ -191,13 +191,14 @@ class GanttApp(QMainWindow):
         self.col_toggle_layout.addStretch()
         self.left_layout.addLayout(self.col_toggle_layout)
 
-        self.table = TaskTable(0, 6)
-        self.table.setHorizontalHeaderLabels(["", "", "タスク名", "進捗(%)", "期間指定", "色"])
+        self.table = TaskTable(0, 7)
+        self.table.setHorizontalHeaderLabels(["", "", "タスク名", "人数", "進捗(%)", "期間指定", "色"])
         self.table.setColumnWidth(0, 25)
         self.table.setColumnWidth(1, 35)
-        self.table.setColumnWidth(3, 60)
-        self.table.setColumnWidth(4, 165)
-        self.table.setColumnWidth(5, 40)
+        self.table.setColumnWidth(3, 45)
+        self.table.setColumnWidth(4, 60)
+        self.table.setColumnWidth(5, 165)
+        self.table.setColumnWidth(6, 40)
         self.table.setColumnWidth(2, 200)
         self.table.horizontalHeader().setFixedHeight(self.header_height)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Interactive)
@@ -611,7 +612,7 @@ class GanttApp(QMainWindow):
         headers = self.get_summary_headers(base_date)
         
         self.table.blockSignals(True)
-        labels = ["", "", "タスク名", "進捗(%)", "期間指定", "色"] + [h[2] for h in headers]
+        labels = ["", "", "タスク名", "人数", "進捗(%)", "期間指定", "色"] + [h[2] for h in headers]
         if self.table.columnCount() != len(labels):
             self.table.setColumnCount(len(labels))
         self.table.setHorizontalHeaderLabels(labels)
@@ -619,7 +620,7 @@ class GanttApp(QMainWindow):
         for r, info in enumerate(self.visible_tasks_info):
             t = info['task']
             for i, (h_start, h_end, _) in enumerate(headers):
-                col_idx = 6 + i
+                col_idx = 7 + i
                 item_s = self.table.item(r, col_idx)
                 if not item_s:
                     item_s = QTableWidgetItem()
@@ -655,6 +656,7 @@ class GanttApp(QMainWindow):
         
         for task in tasks_to_sum:
             t_color = task.get('color', '#0078d4')
+            headcount = task.get('headcount', 1)
             for p in task.get('periods', []):
                 if not p.get('start_date') or not p.get('end_date'): continue
                 try:
@@ -666,7 +668,7 @@ class GanttApp(QMainWindow):
                         # バーの色がタスクの色と異なる場合は集計から除外
                         if p_color and p_color.lower() != t_color.lower():
                             continue
-                        day_map[t_color] = day_map.get(t_color, 0) + overlap
+                        day_map[t_color] = day_map.get(t_color, 0) + (overlap * headcount)
                 except ValueError:
                     continue
         return day_map
@@ -678,7 +680,7 @@ class GanttApp(QMainWindow):
             t = info['task']
             if t.get('is_group'):
                 for i, (h_start, h_end, _) in enumerate(headers):
-                    col_idx = 6 + i
+                    col_idx = 7 + i
                     item_s = self.table.item(r, col_idx)
                     if item_s:
                         day_map = self.get_task_workload_in_range(t, info['index'], h_start, h_end)
@@ -693,12 +695,12 @@ class GanttApp(QMainWindow):
                 e = p['end_date'].replace('-', '/')
                 p_strs.append(f"{s}-{e}")
             
-            period_item = self.table.item(r, 4)
+            period_item = self.table.item(r, 5)
             if period_item:
                 period_item.setText(", ".join(p_strs))
             
             for i, (h_start, h_end, _) in enumerate(headers):
-                col_idx = 6 + i
+                col_idx = 7 + i
                 item_s = self.table.item(r, col_idx)
                 if item_s:
                     day_map = self.get_task_workload_in_range(t, info['index'], h_start, h_end)
@@ -745,6 +747,16 @@ class GanttApp(QMainWindow):
         elif col == 3:
             if t.get('is_group'): return
             try:
+                hc = float(item.text().strip())
+                t['headcount'] = max(0.0, hc)
+            except ValueError:
+                pass
+            self.table.blockSignals(True)
+            item.setText(f"{t.get('headcount', 1.0):.1f}")
+            self.table.blockSignals(False)
+        elif col == 4:
+            if t.get('is_group'): return
+            try:
                 prog = int(item.text().replace('%', '').strip())
                 t['progress'] = max(0, min(100, prog))
             except ValueError:
@@ -752,7 +764,7 @@ class GanttApp(QMainWindow):
             self.table.blockSignals(True)
             item.setText(str(t['progress']))
             self.table.blockSignals(False)
-        elif col == 4:
+        elif col == 5:
             if t.get('is_group'): return
             period_str = item.text()
             parsed = self.get_periods_from_string(period_str)
@@ -761,7 +773,7 @@ class GanttApp(QMainWindow):
             else:
                 QMessageBox.warning(self, "エラー", "期間の形式が正しくありません。\n例: 04/01-04/05")
         
-        self.draw_chart()
+        self.update_ui()
 
     def on_table_cell_clicked(self, row, col):
         if row >= len(self.visible_tasks_info): return
@@ -778,7 +790,7 @@ class GanttApp(QMainWindow):
         info = self.visible_tasks_info[row]
         t = info['task']
         
-        if col == 5:
+        if col == 6:
             color_groups = self.get_color_groups()
             dlg = ColorGridDialog(color_groups, self)
             if dlg.exec():
@@ -933,22 +945,23 @@ class GanttApp(QMainWindow):
     def format_summary_workload(self, day_map):
         if not day_map: return "0工数"
         total = sum(day_map.values())
+        total_str = f"{total:g}"
         if len(day_map) <= 1:
-            return f"{total}工数"
+            return f"{total_str}工数"
         
         parts = []
         for code in sorted(day_map.keys()):
             days = day_map[code]
             name = self.get_color_name(code)
-            parts.append(f"{name}:{days}")
-        return f"計{total}工数 ({', '.join(parts)})"
+            parts.append(f"{name}:{days:g}")
+        return f"計{total_str}工数 ({', '.join(parts)})"
 
     def toggle_column_visibility(self, idx, visible):
-        if idx < 6:
+        if idx < 7:
             self.table.setColumnHidden(idx, not visible)
         else:
             self.summary_visible = visible
-            for i in range(6, self.table.columnCount()):
+            for i in range(7, self.table.columnCount()):
                 self.table.setColumnHidden(i, not visible)
         
         if idx in self.col_actions:

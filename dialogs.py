@@ -182,6 +182,7 @@ class SummaryDialog(QDialog):
                 color_map = {}
                 for t in g['tasks']:
                     t_color = t.get('color', '#0078d4')
+                    headcount = t.get('headcount', 1)
                     for p in t.get('periods', []):
                         if not p.get('start_date') or not p.get('end_date'): continue
                         psd = datetime.strptime(p['start_date'], "%Y-%m-%d")
@@ -192,9 +193,10 @@ class SummaryDialog(QDialog):
                             # バーの色がタスクの色と異なる場合は集計から除外
                             if p_color and p_color.lower() != t_color.lower():
                                 continue
-                            color_map[t_color] = color_map.get(t_color, 0) + overlap
+                            val = overlap * headcount
+                            color_map[t_color] = color_map.get(t_color, 0) + val
                             # 全体合計に加算
-                            total_period_maps[c][t_color] = total_period_maps[c].get(t_color, 0) + overlap
+                            total_period_maps[c][t_color] = total_period_maps[c].get(t_color, 0) + val
                 
                 if not color_map:
                     item = QTableWidgetItem("-")
