@@ -537,13 +537,25 @@ class GanttApp(QMainWindow):
             groups_to_process.append((temp_group, temp_tasks))
             
         for g, tasks in groups_to_process:
-            # 作成モードの手動リソース使用は無視し、純粋にグループのリソース枠だけで計算
             group_res = float(g.get('headcount', 1.0)) if g else 1.0
             
+            manual_res_per_day = {}
             auto_tasks = []
             
             for t in tasks:
-                if t.get('mode', 'manual') == 'auto':
+                if t.get('mode', 'manual') == 'manual':
+                    hc = float(t.get('headcount', 1.0))
+                    for p in t.get('periods', []):
+                        if not p.get('start_date') or not p.get('end_date'): continue
+                        try:
+                            sd = datetime.strptime(p['start_date'], "%Y-%m-%d")
+                            ed = datetime.strptime(p['end_date'], "%Y-%m-%d")
+                            for i in range((ed - sd).days + 1):
+                                d_str = (sd + timedelta(days=i)).strftime("%Y-%m-%d")
+                                manual_res_per_day[d_str] = manual_res_per_day.get(d_str, 0.0) + hc
+                        except ValueError:
+                            pass
+                else:
                     sd_str = t.get('auto_start_date')
                     if not sd_str:
                         sd_str = self.min_date.strftime("%Y-%m-%d")
@@ -568,8 +580,12 @@ class GanttApp(QMainWindow):
             days_simulated = 0
             
             while any(at['rem_work'] > 0 for at in auto_tasks) and days_simulated < max_days:
+                d_str = current_date.strftime("%Y-%m-%d")
+                
+                # その日に消化可能な工数 ＝ グループの人数 ＋ その日の作成タスクの合計人数
+                avail_res = group_res + manual_res_per_day.get(d_str, 0.0)
                 # 0以下の場合は最低限の進捗(0.001)を保証して無限ループを防ぐ
-                avail_res = max(0.001, group_res)
+                avail_res = max(0.001, avail_res)
                 
                 active_tasks = [at for at in auto_tasks if at['start'] <= current_date and at['rem_work'] > 0]
                 
@@ -762,14 +778,12 @@ class GanttApp(QMainWindow):
                 tasks_to_sum.append(self.tasks[i])
         
         for task in tasks_to_sum:
-            t_color = task.get('color', '#0078d4')
+            # 「生成モード」は集計から除外
             if task.get('mode') == 'auto':
-                try:
-                    hc = task.get('workload', 10.0) / max(1, (datetime.strptime(task['periods'][-1]['end_date'], "%Y-%m-%d") - datetime.strptime(task['periods'][0]['start_date'], "%Y-%m-%d")).days + 1) if task.get('periods') else 1.0
-                except:
-                    hc = 1.0
-            else:
-                hc = task.get('headcount', 1.0)
+                continue
+                
+            t_color = task.get('color', '#0078d4')
+            hc = task.get('headcount', 1.0)
                 
             for p in task.get('periods', []):
                 if not p.get('start_date') or not p.get('end_date'): continue
