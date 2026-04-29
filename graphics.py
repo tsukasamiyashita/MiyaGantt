@@ -331,7 +331,10 @@ class GanttBarItem(QGraphicsRectItem):
                     item.update_appearance()
                     
         self.app.sync_table_from_tasks()
-        QTimer.singleShot(100, self.app.update_ui)
+        if was_resizing or new_row != self.row or sx != self.start_pos.x():
+            QTimer.singleShot(100, self.app.update_ui)
+        else:
+            self.update_appearance()
 
     def mouseDoubleClickEvent(self, event):
         log_event("GanttBarItem.mouseDoubleClickEvent", f"Row: {self.row}")
@@ -511,47 +514,7 @@ class ChartScene(QGraphicsScene):
         if hasattr(self.app, 'chart_view') and self.app.chart_view:
             self.app.chart_view.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
 
-    def drawBackground(self, painter, rect):
-        super().drawBackground(painter, rect)
-        
-        if not hasattr(self.app, 'min_date') or not hasattr(self.app, 'day_width') or getattr(self.app, 'day_width', 0) <= 0:
-            return
-            
-        left_x = rect.left()
-        right_x = rect.right()
-        
-        start_day_idx = max(0, int(left_x / self.app.day_width))
-        end_day_idx = int(right_x / self.app.day_width) + 1
-        
-        display_days = getattr(self.app, 'display_days', 0)
-        end_day_idx = min(end_day_idx, display_days)
-        
-        painter.setPen(Qt.NoPen)
-        
-        for i in range(start_day_idx, end_day_idx):
-            d = self.app.min_date + timedelta(days=i)
-            x = i * self.app.day_width
-            d_str = d.strftime("%Y-%m-%d")
-            
-            custom_status = self.app.custom_holidays.get(d_str)
-            is_public = jpholiday.is_holiday(d)
-            
-            bg = None
-            if custom_status == "営業日":
-                pass
-            else:
-                is_custom_holiday = (custom_status is not None and custom_status != "営業日")
-                if d.weekday() == 5:
-                    if is_custom_holiday or is_public:
-                        bg = QColor(255, 240, 240)
-                    else:
-                        bg = QColor(240, 248, 255)
-                elif d.weekday() == 6 or is_public or is_custom_holiday:
-                    bg = QColor(255, 240, 240)
-                    
-            if bg:
-                painter.setBrush(QBrush(bg))
-                painter.drawRect(QRectF(x, rect.top(), self.app.day_width, rect.height()))
+
 
     def mousePressEvent(self, e):
         log_event("ChartScene.mousePressEvent", f"Pos: {e.scenePos().x()}, {e.scenePos().y()}, Button: {e.button()}")
@@ -566,8 +529,6 @@ class ChartScene(QGraphicsScene):
                     break
                 temp = temp.parentItem()
 
-        self.app.chart_view.setDragMode(QGraphicsView.DragMode.NoDrag)
-
         if not target_bar:
             if e.button() == Qt.LeftButton:
                 y = e.scenePos().y()
@@ -580,7 +541,7 @@ class ChartScene(QGraphicsScene):
                 else:
                     self.start_x = 0
             
-            e.accept()
+            super().mousePressEvent(e)
             return
 
         if target_bar and e.button() == Qt.LeftButton and not (e.modifiers() & (Qt.ControlModifier | Qt.ShiftModifier)):

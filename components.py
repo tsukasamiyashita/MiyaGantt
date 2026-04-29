@@ -15,6 +15,17 @@ class NoHighlightDelegate(QStyledItemDelegate):
         opt = QStyleOptionViewItem(option)
         opt.state &= ~QStyle.State_Selected
         opt.state &= ~QStyle.State_HasFocus
+        
+        # 選択やフォーカスで上書きされた背景ブラシを本来のBackgroundRoleに戻す
+        bg = index.data(Qt.BackgroundRole)
+        if bg is not None:
+            if isinstance(bg, QBrush):
+                opt.backgroundBrush = bg
+            else:
+                opt.backgroundBrush = QBrush(QColor(bg))
+        else:
+            opt.backgroundBrush = QBrush(Qt.NoBrush)
+            
         super().paint(painter, opt, index)
 
 class HideableHeader(QHeaderView):

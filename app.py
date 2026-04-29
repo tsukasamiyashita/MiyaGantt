@@ -258,6 +258,7 @@ class GanttApp(QMainWindow, FileIOMixin, ChartMixin, EventsMixin, SyncMixin, Uti
         self.hv = QGraphicsView(self.hs)
         self.chart_view = QGraphicsView(self.cs)
         self.chart_view.setDragMode(QGraphicsView.DragMode.NoDrag)
+        self.chart_view.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
         
         for v in [self.hv, self.chart_view]:
             v.setRenderHint(QPainter.Antialiasing)
@@ -335,4 +336,5 @@ if __name__ == '__main__':
     app.setStyle('Fusion')
     window = GanttApp()
     window.showMaximized()
+    sys.exit(app.exec())
     sys.exit(app.exec())

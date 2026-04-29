@@ -632,13 +632,43 @@ class SyncMixin:
             self.col_actions[idx].blockSignals(False)
 
     def update_selection_mark(self, *args):
-        self.table.blockSignals(True)
-        curr = self.table.currentRow()
-        for r in range(self.table.rowCount()):
-            it = self.table.item(r, 0)
-            if it:
-                it.setText("●" if r == curr else "")
-                it.setTextAlignment(Qt.AlignCenter)
-                it.setForeground(QColor(0, 120, 212)) # 青いドット
-        self.table.blockSignals(False)
+        if getattr(self, '_updating_selection', False):
+            return
+        self._updating_selection = True
+        try:
+            self.table.blockSignals(True)
+            curr = self.table.currentRow()
+            
+            # 前回の選択行と今回の選択行のみを更新して高速化
+            last_row = getattr(self, 'last_current_row', -1)
+            
+            # 全行を回すのではなく、必要な行のみ更新
+            rows_to_update = set()
+            if last_row >= 0 and last_row < self.table.rowCount():
+                rows_to_update.add(last_row)
+            if curr >= 0 and curr < self.table.rowCount():
+                rows_to_update.add(curr)
+                
+            if not rows_to_update:
+                # 念のため全行チェック（初回など）
+                for r in range(self.table.rowCount()):
+                    it = self.table.item(r, 0)
+                    if it:
+                        text = "●" if r == curr else ""
+                        if it.text() != text:
+                            it.setText(text)
+                            it.setTextAlignment(Qt.AlignCenter)
+                            it.setForeground(QColor(0, 120, 212))
+            else:
+                for r in rows_to_update:
+                    it = self.table.item(r, 0)
+                    if it:
+                        it.setText("●" if r == curr else "")
+                        it.setTextAlignment(Qt.AlignCenter)
+                        it.setForeground(QColor(0, 120, 212))
+            
+            self.last_current_row = curr
+            self.table.blockSignals(False)
+        finally:
+            self._updating_selection = False
 
