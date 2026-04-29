@@ -981,8 +981,10 @@ class GanttApp(QMainWindow):
         path = os.path.join(config_dir, 'config.json')
         
         column_visibility = {}
+        column_widths = {}
         for i in range(7):
             column_visibility[str(i)] = not self.table.isColumnHidden(i)
+            column_widths[str(i)] = self.table.columnWidth(i)
         
         config = {
             "zoom_unit": self.zoom_unit,
@@ -991,6 +993,8 @@ class GanttApp(QMainWindow):
             "display_count": self.display_count,
             "summary_visible": self.summary_visible,
             "column_visibility": column_visibility,
+            "column_widths": column_widths,
+            "splitter_sizes": self.splitter.sizes(),
             "custom_holidays": self.custom_holidays,
             "last_path": self.last_path
         }
@@ -1018,6 +1022,14 @@ class GanttApp(QMainWindow):
             self.summary_visible = config.get("summary_visible", self.summary_visible)
             self.custom_holidays = config.get("custom_holidays", self.custom_holidays)
             self.last_path = config.get("last_path", "")
+            
+            column_widths = config.get("column_widths", {})
+            for idx_str, width in column_widths.items():
+                self.table.setColumnWidth(int(idx_str), width)
+            
+            splitter_sizes = config.get("splitter_sizes")
+            if splitter_sizes:
+                self.splitter.setSizes(splitter_sizes)
             
             if hasattr(self, 'zoom_unit_combo'):
                 self.zoom_unit_combo.blockSignals(True)
