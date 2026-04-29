@@ -286,8 +286,8 @@ class ChartRenderer:
                 item_s.setForeground(QColor(51, 51, 51))
                 item_s.setTextAlignment(Qt.AlignCenter)
                 
-                day_map = self.app.get_task_day_map_in_range(t, info['index'], h_start, h_end)
-                item_s.setText(self.app.format_total_days(day_map))
+                day_map = self.app.get_task_workload_in_range(t, info['index'], h_start, h_end)
+                item_s.setText(self.app.format_summary_workload(day_map))
                 
                 if is_group:
                     item_s.setBackground(QColor(242, 242, 242))

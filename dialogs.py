@@ -199,7 +199,7 @@ class SummaryDialog(QDialog):
                 if not color_map:
                     item = QTableWidgetItem("-")
                 else:
-                    text = self.app.format_total_days(color_map)
+                    text = self.app.format_summary_workload(color_map)
                     item = QTableWidgetItem(text)
                 
                 item.setTextAlignment(Qt.AlignCenter)
@@ -216,7 +216,7 @@ class SummaryDialog(QDialog):
         table.setItem(total_row_idx, 0, total_label_item)
         
         for c, color_map in enumerate(total_period_maps):
-            text = self.app.format_total_days(color_map) if color_map else "-"
+            text = self.app.format_summary_workload(color_map) if color_map else "-"
             item = QTableWidgetItem(text)
             item.setTextAlignment(Qt.AlignCenter)
             item.setBackground(QColor(240, 248, 255))

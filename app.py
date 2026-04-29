@@ -627,8 +627,8 @@ class GanttApp(QMainWindow):
                 
                 item_s.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                 item_s.setTextAlignment(Qt.AlignCenter)
-                day_map = self.get_task_day_map_in_range(t, info['index'], h_start, h_end)
-                item_s.setText(self.format_total_days(day_map))
+                day_map = self.get_task_workload_in_range(t, info['index'], h_start, h_end)
+                item_s.setText(self.format_summary_workload(day_map))
                 
                 if t.get('is_group'):
                     item_s.setBackground(QColor(242, 242, 242))
@@ -641,7 +641,7 @@ class GanttApp(QMainWindow):
                 
         self.table.blockSignals(False)
 
-    def get_task_day_map_in_range(self, t, start_idx, timeline_start=None, timeline_end=None):
+    def get_task_workload_in_range(self, t, start_idx, timeline_start=None, timeline_end=None):
         day_map = {}
         if timeline_start is None: timeline_start = self.min_date
         if timeline_end is None: timeline_end = self.min_date + timedelta(days=self.display_days - 1)
@@ -681,8 +681,8 @@ class GanttApp(QMainWindow):
                     col_idx = 6 + i
                     item_s = self.table.item(r, col_idx)
                     if item_s:
-                        day_map = self.get_task_day_map_in_range(t, info['index'], h_start, h_end)
-                        item_s.setText(self.format_total_days(day_map))
+                        day_map = self.get_task_workload_in_range(t, info['index'], h_start, h_end)
+                        item_s.setText(self.format_summary_workload(day_map))
                 continue
             
             periods = t.get('periods', [])
@@ -701,8 +701,8 @@ class GanttApp(QMainWindow):
                 col_idx = 6 + i
                 item_s = self.table.item(r, col_idx)
                 if item_s:
-                    day_map = self.get_task_day_map_in_range(t, info['index'], h_start, h_end)
-                    item_s.setText(self.format_total_days(day_map))
+                    day_map = self.get_task_workload_in_range(t, info['index'], h_start, h_end)
+                    item_s.setText(self.format_summary_workload(day_map))
         self.table.blockSignals(False)
 
     def create_task_from_drag(self, x1, x2, y):
@@ -930,18 +930,18 @@ class GanttApp(QMainWindow):
                     return name
         return "不明"
 
-    def format_total_days(self, day_map):
-        if not day_map: return "0日"
+    def format_summary_workload(self, day_map):
+        if not day_map: return "0工数"
         total = sum(day_map.values())
         if len(day_map) <= 1:
-            return f"{total}日"
+            return f"{total}工数"
         
         parts = []
         for code in sorted(day_map.keys()):
             days = day_map[code]
             name = self.get_color_name(code)
             parts.append(f"{name}:{days}")
-        return f"計{total}日 ({', '.join(parts)})"
+        return f"計{total}工数 ({', '.join(parts)})"
 
     def toggle_column_visibility(self, idx, visible):
         if idx < 6:
