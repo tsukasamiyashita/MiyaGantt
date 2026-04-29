@@ -1,3 +1,4 @@
+# tsukasamiyashita/miyagantt/MiyaGantt-90775b445eeca08d321c122853c84ad8762e2c95/mixins_chart.py
 import os
 import json
 import calendar
@@ -42,17 +43,24 @@ class ChartMixin:
             x = i * self.day_width
             d_str = d.strftime("%Y-%m-%d")
             
-            is_custom = d_str in self.custom_holidays
+            custom_status = self.custom_holidays.get(d_str)
             is_public = jpholiday.is_holiday(d)
             
             # 背景色の決定
             bg = None
-            if d.weekday() == 5: # 土曜日
-                bg = QColor(240, 248, 255) # 青
-                if is_custom:
-                    bg = QColor(255, 240, 240) # 土曜日を祝日（赤）にする
-            elif d.weekday() == 6 or is_public or is_custom: # 日曜日、祝日、カスタム祝日
-                bg = QColor(255, 240, 240) # 赤
+            if custom_status == "営業日":
+                pass # 営業日として指定された場合は色なし
+            else:
+                # 古いデータ互換のため、"営業日"以外は全て休日として扱う
+                is_custom_holiday = (custom_status is not None and custom_status != "営業日")
+                
+                if d.weekday() == 5: # 土曜日
+                    if is_custom_holiday or is_public:
+                        bg = QColor(255, 240, 240) # 休日指定、または祝日と重なっている場合は赤
+                    else:
+                        bg = QColor(240, 248, 255) # 通常の土曜日（青）
+                elif d.weekday() == 6 or is_public or is_custom_holiday: # 日曜日、祝日、カスタム休日
+                    bg = QColor(255, 240, 240) # 赤
             
             if bg:
                 re = self.cs.addRect(x, 0, self.day_width, ch, QPen(Qt.NoPen), QBrush(bg))
@@ -74,7 +82,7 @@ class ChartMixin:
                     sl.setFlag(QGraphicsItem.ItemIsSelectable, False)
             
             # ヘッダー (日付・曜日)
-            h_bg = QColor(255, 255, 225) if is_custom else QColor(248, 248, 248)
+            h_bg = QColor(255, 255, 225) if custom_status else QColor(248, 248, 248)
             self.hs.addRect(x, 35, self.day_width, 35, QPen(QColor(210, 210, 210)), QBrush(h_bg)).setZValue(5)
             
             if self.day_width >= 35:
@@ -88,7 +96,11 @@ class ChartMixin:
                 dl.setZValue(10)
                 
                 # 曜日の色
-                if d.weekday() == 5 and not is_public: # 土曜日
+                if custom_status == "営業日":
+                    w_c = QColor(60, 60, 60) # 営業日扱い
+                elif custom_status is not None and custom_status != "営業日":
+                    w_c = QColor(220, 0, 0) # 休日扱い
+                elif d.weekday() == 5 and not is_public: # 土曜日
                     w_c = QColor(0, 80, 200)
                 elif d.weekday() == 6 or is_public: # 日曜または公的祝日
                     w_c = QColor(220, 0, 0)
@@ -101,8 +113,8 @@ class ChartMixin:
                 yl.setPos(x + (self.day_width/2) - 8, 52)
                 yl.setZValue(10)
                 
-                if is_public or is_custom:
-                    h_name = self.custom_holidays.get(d_str) or jpholiday.is_holiday_name(d)
+                if is_public or custom_status:
+                    h_name = custom_status if custom_status else jpholiday.is_holiday_name(d)
                     if h_name:
                         dl.setToolTip(h_name)
                         yl.setToolTip(h_name)
@@ -366,4 +378,3 @@ class ChartMixin:
         
         new_v = (new_date - self.min_date).days * self.day_width
         self.chart_view.horizontalScrollBar().setValue(int(new_v))
-

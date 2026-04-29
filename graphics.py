@@ -1,3 +1,4 @@
+# tsukasamiyashita/miyagantt/MiyaGantt-90775b445eeca08d321c122853c84ad8762e2c95/graphics.py
 import sys
 import os
 import calendar
@@ -514,10 +515,18 @@ class HeaderScene(QGraphicsScene):
                     d = self.app.min_date + timedelta(days=day_idx)
                     d_str = d.strftime("%Y-%m-%d")
                     
+                    is_public = jpholiday.is_holiday(d)
+                    is_default_holiday = d.weekday() in (5, 6) or is_public
+                    
                     if d_str in self.app.custom_holidays:
+                        # 既にカスタム設定がある場合は元に戻す
                         del self.app.custom_holidays[d_str]
                     else:
-                        self.app.custom_holidays[d_str] = "休日"
+                        # カスタム設定がない場合、デフォルトが休日なら「営業日」に、平日なら「休日」にする
+                        if is_default_holiday:
+                            self.app.custom_holidays[d_str] = "営業日"
+                        else:
+                            self.app.custom_holidays[d_str] = "休日"
                     
                     self.app.draw_chart()
                     event.accept()
@@ -711,4 +720,3 @@ class ChartScene(QGraphicsScene):
                 QTimer.singleShot(100, self.app.update_ui)
         else:
             super().contextMenuEvent(e)
-
