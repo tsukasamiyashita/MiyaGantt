@@ -1,0 +1,378 @@
+# tsukasamiyashita/miyagantt/MiyaGantt-46a1664b6d1737cb32f1dd17429ce06cca8dc678/gantt_items.py
+from datetime import datetime, timedelta
+from PySide6.QtWidgets import (QGraphicsRectItem, QGraphicsTextItem, QGraphicsScene, 
+                               QMenu, QLineEdit, QInputDialog)
+from PySide6.QtCore import Qt, QRectF, QTimer
+from PySide6.QtGui import QBrush, QPen, QColor, QFont
+from dialogs import ColorGridDialog
+
+class GanttBarItem(QGraphicsRectItem):
+    def __init__(self, task, row, period_index, gantt_app, rect=None):
+        super().__init__(rect)
+        self.task = task
+        self.row = row
+        self.period_index = period_index
+        self.app = gantt_app
+        self.setFlags(QGraphicsRectItem.ItemIsMovable | 
+                      QGraphicsRectItem.ItemIsSelectable | 
+                      QGraphicsRectItem.ItemSendsGeometryChanges)
+        self.setAcceptHoverEvents(True)
+        
+        self.progress_item = QGraphicsRectItem(self)
+        # 初期テキストの設定（update_appearanceで上書きされるため空でも可）
+        self.text_item = QGraphicsTextItem('', self)
+        self.text_item.setDefaultTextColor(Qt.white)
+        self.text_item.setZValue(1)
+        font = QFont("Segoe UI", 9, QFont.Bold)
+        self.text_item.setFont(font)
+        self.progress_item.setAcceptHoverEvents(False)
+        self.text_item.setAcceptHoverEvents(False)
+        
+        self.resizing_left = False
+        self.resizing_right = False
+        self.update_appearance()
+
+    def update_appearance(self):
+        periods = self.task.get('periods', [])
+        p_dict = periods[self.period_index] if self.period_index < len(periods) else self.task
+        color_code = p_dict.get('color', self.task.get('color', '#0078d4'))
+        bc = QColor(color_code)
+        
+        self.setPen(QPen(Qt.black if self.isSelected() else bc.darker(120), 2 if self.isSelected() else 1))
+        self.setBrush(QBrush(bc.lighter(150)))
+        
+        prog = self.task.get('progress', 0)
+        
+        periods = self.task.get('periods', [self.task])
+        valid_periods = []
+        for i, p in enumerate(periods):
+            try:
+                sd = datetime.strptime(p.get('start_date', ''), "%Y-%m-%d")
+                ed = datetime.strptime(p.get('end_date', ''), "%Y-%m-%d")
+                valid_periods.append({'idx': i, 'start': sd, 'end': ed, 'days': (ed - sd).days + 1})
+            except Exception:
+                pass
+                
+        valid_periods.sort(key=lambda x: x['start'])
+        total_days = sum(p['days'] for p in valid_periods)
+        
+        target_days = total_days * (prog / 100.0)
+        
+        days_allocated_to_this = 0
+        for p in valid_periods:
+            if target_days <= 0:
+                break
+            allocate = min(p['days'], target_days)
+            if p['idx'] == self.period_index:
+                days_allocated_to_this = allocate
+                break
+            target_days -= allocate
+            
+        this_period = next((p for p in valid_periods if p['idx'] == self.period_index), None)
+        local_prog_ratio = (days_allocated_to_this / this_period['days']) if (this_period and this_period['days'] > 0) else 0
+        
+        p_rect = QRectF(self.rect().left(), self.rect().top(), self.rect().width() * local_prog_ratio, self.rect().height())
+        self.progress_item.setRect(p_rect)
+        self.progress_item.setBrush(QBrush(bc))
+        self.progress_item.setPen(Qt.NoPen)
+        # ツールチップ更新用のデータ取得
+        periods = self.task.get('periods')
+        if periods is not None and self.period_index < len(periods):
+            p_dict = periods[self.period_index]
+        else:
+            p_dict = self.task
+
+        # バー固有のテキスト（無ければ空）を表示
+        bar_text = p_dict.get('text', '')
+        self.text_item.setPlainText(bar_text)
+        self.text_item.setPos(5, (self.rect().height() - self.text_item.boundingRect().height()) / 2)
+
+        start_d = p_dict.get('start_date', '')
+        end_d = p_dict.get('end_date', '')
+        self.setToolTip(f"タスク: {self.task.get('name','')}\n期間: {start_d}〜{end_d}")
+
+    def hoverMoveEvent(self, event):
+        x = event.pos().x()
+        w = self.rect().width()
+        # 1日の場合や幅が狭い場合でも確実に反応するように調整
+        margin = 12 if w <= self.app.day_width else 10
+        margin = min(margin, w / 2 - 2)
+        if x < margin or x > w - margin:
+            self.setCursor(Qt.SizeHorCursor)
+        else:
+            self.setCursor(Qt.OpenHandCursor)
+        super().hoverMoveEvent(event)
+
+    def hoverLeaveEvent(self, event):
+        self.setCursor(Qt.ArrowCursor)
+        super().hoverLeaveEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            x = event.pos().x()
+            w = self.rect().width()
+            margin = 12 if w <= self.app.day_width else 10
+            margin = min(margin, w / 2 - 2)
+            if x < margin:
+                self.resizing_left = True
+            elif x > w - margin:
+                self.resizing_right = True
+            else:
+                self.setCursor(Qt.ClosedHandCursor)
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        snap = self.app.day_width
+        if self.resizing_left:
+            diff = event.scenePos().x() - event.lastScenePos().x()
+            nr = self.rect()
+            if nr.width() - diff >= snap:
+                self.setPos(self.pos().x() + diff, self.pos().y())
+                self.setRect(0, 0, nr.width() - diff, nr.height())
+        elif self.resizing_right:
+            diff = event.scenePos().x() - event.lastScenePos().x()
+            nr = self.rect()
+            if nr.width() + diff >= snap:
+                self.setRect(0, 0, nr.width() + diff, nr.height())
+        else:
+            super().mouseMoveEvent(event)
+            # マウスカーソルの位置に基づいて行の中心にスナップ
+            row = int(event.scenePos().y() / self.app.row_height)
+            # タスクが存在する行の範囲内に制限
+            max_row = len(self.app.visible_tasks_info) - 1 if self.app.visible_tasks_info else 0
+            row = max(0, min(max_row, row))
+            self.setPos(self.pos().x(), row * self.app.row_height + 10)
+        self.update_appearance()
+
+    def mouseReleaseEvent(self, event):
+        was_resizing = self.resizing_left or self.resizing_right
+        self.resizing_left = self.resizing_right = False
+        self.setCursor(Qt.OpenHandCursor)
+        snap = self.app.day_width
+        sx = round(self.pos().x() / snap) * snap
+        sw = max(snap, round(self.rect().width() / snap) * snap)
+        
+        sd = self.app.min_date + timedelta(days=sx / self.app.day_width)
+        ed = sd + timedelta(days=sw / self.app.day_width - 0.001)
+
+        # 移動先の行を判定
+        new_row = int(event.scenePos().y() / self.app.row_height)
+        max_row = len(self.app.visible_tasks_info) - 1 if self.app.visible_tasks_info else 0
+        new_row = max(0, min(max_row, new_row))
+        
+        # サイズ調整中ではなかった場合のみ行移動を許可
+        if not was_resizing and new_row != self.row:
+            target_info = self.app.visible_tasks_info[new_row]
+            target_task = target_info['task']
+            
+            # グループ行への移動は禁止
+            if target_task.get('is_group'):
+                QTimer.singleShot(0, self.app.update_ui)
+                super().mouseReleaseEvent(event)
+                return
+
+            # 移動元・移動先の両方で 'periods' 形式を確定させる
+            for t in [self.task, target_task]:
+                if 'periods' not in t:
+                    t['periods'] = [{'start_date': t.get('start_date', ''), 'end_date': t.get('end_date', '')}]
+            
+            if 0 <= self.period_index < len(self.task['periods']):
+                # 期間データを移動
+                p = self.task['periods'].pop(self.period_index)
+                p['start_date'] = sd.strftime("%Y-%m-%d")
+                p['end_date'] = ed.strftime("%Y-%m-%d")
+                
+                target_task = self.app.tasks[new_row]
+                target_task['periods'].append(p)
+                
+                # 互換性のためメインの日付フィールドも更新
+                for t in [self.task, target_task]:
+                    if t['periods']:
+                        t['start_date'] = t['periods'][0]['start_date']
+                        t['end_date'] = t['periods'][0]['end_date']
+                
+                QTimer.singleShot(0, self.app.update_ui)
+            
+            super().mouseReleaseEvent(event)
+            return
+
+        self.setPos(sx, self.pos().y())
+        self.setRect(0, 0, sw, self.rect().height())
+        super().mouseReleaseEvent(event)
+        
+        if 'periods' not in self.task:
+            self.task['periods'] = [{'start_date': self.task.get('start_date', ''), 'end_date': self.task.get('end_date', '')}]
+            
+        self.task['periods'][self.period_index]['start_date'] = sd.strftime("%Y-%m-%d")
+        self.task['periods'][self.period_index]['end_date'] = ed.strftime("%Y-%m-%d")
+        
+        # update single fields for backwards compatibility
+        self.task['start_date'] = self.task['periods'][0]['start_date']
+        self.task['end_date'] = self.task['periods'][0]['end_date']
+        
+        if self.scene():
+            for item in self.scene().items():
+                if isinstance(item, GanttBarItem) and item.task is self.task:
+                    item.update_appearance()
+                    
+        self.app.sync_table_from_tasks()
+        self.app.update_ui()
+
+    def mouseDoubleClickEvent(self, event):
+        # Prevent default double click which was old edit open
+        super().mouseDoubleClickEvent(event)
+        
+        # ダブルクリックでバー固有のテキストを編集
+        if 'periods' not in self.task:
+            self.task['periods'] = [{'start_date': self.task.get('start_date', ''), 'end_date': self.task.get('end_date', '')}]
+            
+        if 0 <= self.period_index < len(self.task['periods']):
+            p_dict = self.task['periods'][self.period_index]
+            current_text = p_dict.get('text', '')
+            
+            text, ok = QInputDialog.getText(self.app, "テキストの編集", "バーに表示するテキスト:", QLineEdit.Normal, current_text)
+            if ok:
+                p_dict['text'] = text
+                self.update_appearance()
+                self.app.update_ui() # 全体を再描画して確実に反映させる
+
+    def contextMenuEvent(self, event):
+        menu = QMenu()
+        color_action = menu.addAction("色を変更")
+        del_action = menu.addAction("この期間を削除")
+        action = menu.exec(event.screenPos())
+        if action == color_action:
+            color_groups = self.app.get_color_groups()
+            dlg = ColorGridDialog(color_groups, self.app)
+            if dlg.exec():
+                if 'periods' not in self.task:
+                    self.task['periods'] = [{'start_date': self.task.get('start_date', ''), 'end_date': self.task.get('end_date', '')}]
+                self.task['periods'][self.period_index]['color'] = dlg.selected_color
+                self.app.update_ui()
+        elif action == del_action:
+            if 'periods' in self.task:
+                try:
+                    self.task['periods'].pop(self.period_index)
+                    QTimer.singleShot(0, self.app.update_ui)
+                except IndexError:
+                    pass
+
+class HeaderScene(QGraphicsScene):
+    def __init__(self, app):
+        super().__init__()
+        self.app = app
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            # ヘッダーの下半分（日付・曜日エリア）をクリックした場合のみ反応
+            y = event.scenePos().y()
+            if 35 <= y <= 70:
+                x = event.scenePos().x()
+                day_idx = int(x / self.app.day_width)
+                if 0 <= day_idx < self.app.display_days:
+                    d = self.app.min_date + timedelta(days=day_idx)
+                    d_str = d.strftime("%Y-%m-%d")
+                    
+                    if d_str in self.app.custom_holidays:
+                        del self.app.custom_holidays[d_str]
+                    else:
+                        self.app.custom_holidays[d_str] = "休日"
+                    
+                    self.app.draw_chart()
+                    event.accept()
+                    return
+        super().mousePressEvent(event)
+
+class ChartScene(QGraphicsScene):
+    def __init__(self, app):
+        super().__init__()
+        self.app = app
+        self.start_x = 0
+
+    def mousePressEvent(self, e):
+        item = self.itemAt(e.scenePos(), self.app.chart_view.transform())
+        if not item and e.button() == Qt.LeftButton:
+            self.start_x = e.scenePos().x()
+        super().mousePressEvent(e)
+
+    def mouseReleaseEvent(self, e):
+        if self.start_x > 0:
+            item = self.itemAt(e.scenePos(), self.app.chart_view.transform())
+            if not item:
+                if abs(e.scenePos().x() - self.start_x) > (self.app.day_width * 0.1):
+                    self.app.create_task_from_drag(self.start_x, e.scenePos().x(), e.scenePos().y())
+            self.start_x = 0
+        super().mouseReleaseEvent(e)
+
+    def mouseDoubleClickEvent(self, e):
+        items = self.items(e.scenePos(), Qt.IntersectsItemShape, Qt.DescendingOrder, self.app.chart_view.transform())
+        gantt_item = next((it for it in items if isinstance(it, GanttBarItem)), None)
+            
+        if not gantt_item and e.button() == Qt.LeftButton:
+            y = e.scenePos().y()
+            row = int(y / self.app.row_height)
+            if 0 <= row < len(self.app.visible_tasks_info):
+                info = self.app.visible_tasks_info[row]
+                task = info['task']
+                if task.get('is_group'):
+                    return
+
+                x = e.scenePos().x()
+                day_idx = int(x / self.app.day_width)
+                d_str = (self.app.min_date + timedelta(days=day_idx)).strftime("%Y-%m-%d")
+                
+                if 'periods' not in task:
+                    task['periods'] = [{'start_date': task.get('start_date', ''), 'end_date': task.get('end_date', '')}]
+                
+                task['periods'].append({"start_date": d_str, "end_date": d_str, "text": ""})
+                self.app.update_ui()
+                e.accept()
+                return
+        super().mouseDoubleClickEvent(e)
+
+    def contextMenuEvent(self, e):
+        item = self.itemAt(e.scenePos(), self.app.chart_view.transform())
+        if item and not isinstance(item, GanttBarItem):
+            item = None
+            
+        if not item:
+            y = e.scenePos().y()
+            row = int(y / self.app.row_height)
+            menu = QMenu()
+            
+            if 0 <= row < len(self.app.visible_tasks_info):
+                info = self.app.visible_tasks_info[row]
+                task = info['task']
+                if task.get('is_group'):
+                    add_task_in_group = menu.addAction("このグループにタスクを追加")
+                    add_period_action = None
+                else:
+                    task_name = task.get('name', '無題')
+                    add_period_action = menu.addAction(f"「{task_name}」に期間を追加")
+                    add_task_in_group = None
+            else:
+                add_period_action = None
+                add_task_in_group = None
+            
+            action = menu.exec(e.screenPos())
+            x = e.scenePos().x()
+            day_idx = int(x / self.app.day_width)
+            d_str = (self.app.min_date + timedelta(days=day_idx)).strftime("%Y-%m-%d")
+            
+            if action == add_period_action and add_period_action:
+                if 'periods' not in task:
+                    task['periods'] = [{'start_date': task.get('start_date', ''), 'end_date': task.get('end_date', '')}]
+                task['periods'].append({"start_date": d_str, "end_date": d_str})
+                self.app.update_ui()
+            elif action == add_task_in_group and add_task_in_group:
+                new_task = {
+                    "name": "新規タスク",
+                    "periods": [{"start_date": d_str, "end_date": d_str}],
+                    "progress": 0,
+                    "color": "#0078d4"
+                }
+                # グループの直後に挿入
+                self.app.tasks.insert(info['index'] + 1, new_task)
+                self.app.update_ui()
+        else:
+            super().contextMenuEvent(e)
