@@ -11,14 +11,13 @@ from PySide6.QtGui import *
 
 from dialogs import ColorGridDialog
 
-def safe_update_ui(app):
-    """
-    シーンの再構築後に発生しうる部分的な描画抜け（無色化）を
-    防ぐため、明示的にビューポート全体の再描画を強制するヘルパー関数。
-    """
-    app.update_ui()
-    if hasattr(app, 'chart_view') and app.chart_view:
-        app.chart_view.viewport().update()
+def log_event(event_name, details=""):
+    """デバッグ用ログ出力関数"""
+    try:
+        ts = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+        print(f"[{ts}] {event_name}: {details}")
+    except Exception as e:
+        print(f"Log Error: {e}")
 
 class GanttBarItem(QGraphicsRectItem):
     def __init__(self, task, row, period_index, gantt_app, rect=None):
@@ -131,10 +130,12 @@ class GanttBarItem(QGraphicsRectItem):
 
     def itemChange(self, change, value):
         if change == QGraphicsRectItem.ItemSelectedChange:
+            log_event("GanttBarItem.itemChange", f"ItemSelectedChange triggered, Row: {self.row}")
             QTimer.singleShot(0, self.update_appearance)
         return super().itemChange(change, value)
 
     def mousePressEvent(self, event):
+        log_event("GanttBarItem.mousePressEvent", f"Row: {self.row}, Button: {event.button()}")
         if event.button() == Qt.RightButton:
             if self.isSelected():
                 event.accept()
@@ -197,6 +198,7 @@ class GanttBarItem(QGraphicsRectItem):
         self.update_appearance()
 
     def mouseReleaseEvent(self, event):
+        log_event("GanttBarItem.mouseReleaseEvent", f"Row: {self.row}, Resizing: left={self.resizing_left}, right={self.resizing_right}")
         was_resizing = self.resizing_left or self.resizing_right
         selected_items = [it for it in self.scene().selectedItems() if isinstance(it, GanttBarItem)]
         
@@ -254,9 +256,9 @@ class GanttBarItem(QGraphicsRectItem):
                     target_task['periods'].append(p_data)
                     self.app.pending_selection.append(id(p_data))
 
-                QTimer.singleShot(0, lambda: safe_update_ui(self.app))
+                QTimer.singleShot(100, self.app.update_ui)
             except Exception as e:
-                print(f"Error in multi-move: {e}")
+                log_event("Error in multi-move", str(e))
             finally:
                 self.app.chart_view.setUpdatesEnabled(True)
             
@@ -281,7 +283,7 @@ class GanttBarItem(QGraphicsRectItem):
             target_task = target_info['task']
             
             if target_task.get('is_group'):
-                QTimer.singleShot(0, lambda: safe_update_ui(self.app))
+                QTimer.singleShot(100, self.app.update_ui)
                 super().mouseReleaseEvent(event)
                 return
 
@@ -305,7 +307,7 @@ class GanttBarItem(QGraphicsRectItem):
                 
                 if self.scene():
                     self.scene().clearSelection()
-                QTimer.singleShot(0, lambda: safe_update_ui(self.app))
+                QTimer.singleShot(100, self.app.update_ui)
             
             super().mouseReleaseEvent(event)
             return
@@ -329,9 +331,10 @@ class GanttBarItem(QGraphicsRectItem):
                     item.update_appearance()
                     
         self.app.sync_table_from_tasks()
-        QTimer.singleShot(0, lambda: safe_update_ui(self.app))
+        QTimer.singleShot(100, self.app.update_ui)
 
     def mouseDoubleClickEvent(self, event):
+        log_event("GanttBarItem.mouseDoubleClickEvent", f"Row: {self.row}")
         super().mouseDoubleClickEvent(event)
         
         if 'periods' not in self.task:
@@ -346,9 +349,10 @@ class GanttBarItem(QGraphicsRectItem):
                 self.app.save_state()
                 p_dict['text'] = text
                 self.update_appearance()
-                QTimer.singleShot(0, lambda: safe_update_ui(self.app))
+                QTimer.singleShot(100, self.app.update_ui)
 
     def contextMenuEvent(self, event):
+        log_event("GanttBarItem.contextMenuEvent", f"Row: {self.row}")
         selected_items = [it for it in self.scene().selectedItems() if isinstance(it, GanttBarItem)]
         if self not in selected_items:
             selected_items = [self]
@@ -389,9 +393,9 @@ class GanttBarItem(QGraphicsRectItem):
                 
                 if temp_clipboard:
                     self.app.clipboard_periods = temp_clipboard
-                    print(f"Copied {len(temp_clipboard)} items.")
+                    log_event("ContextMenu", f"Copied {len(temp_clipboard)} items.")
             except Exception as e:
-                print(f"Error in copy action: {e}")
+                log_event("Error in copy action", str(e))
         elif action == cut_action:
             if not selected_items: return
             try:
@@ -436,10 +440,10 @@ class GanttBarItem(QGraphicsRectItem):
                     
                     if self.scene():
                         self.scene().clearSelection()
-                    QTimer.singleShot(0, lambda: safe_update_ui(self.app))
-                    print(f"Cut {len(temp_clipboard)} items.")
+                    QTimer.singleShot(100, self.app.update_ui)
+                    log_event("ContextMenu", f"Cut {len(temp_clipboard)} items.")
             except Exception as e:
-                print(f"Error in cut action: {e}")
+                log_event("Error in cut action", str(e))
             finally:
                 self.app.chart_view.setUpdatesEnabled(True)
         elif action == color_action:
@@ -450,7 +454,7 @@ class GanttBarItem(QGraphicsRectItem):
                 if 'periods' not in self.task:
                     self.task['periods'] = [{'start_date': self.task.get('start_date', ''), 'end_date': self.task.get('end_date', '')}]
                 self.task['periods'][self.period_index]['color'] = dlg.selected_color
-                QTimer.singleShot(0, lambda: safe_update_ui(self.app))
+                QTimer.singleShot(100, self.app.update_ui)
         elif action == del_action:
             if 'periods' in self.task:
                 try:
@@ -458,7 +462,7 @@ class GanttBarItem(QGraphicsRectItem):
                     self.task['periods'].pop(self.period_index)
                     if self.scene():
                         self.scene().clearSelection()
-                    QTimer.singleShot(0, lambda: safe_update_ui(self.app))
+                    QTimer.singleShot(100, self.app.update_ui)
                 except IndexError:
                     pass
 
@@ -468,6 +472,7 @@ class HeaderScene(QGraphicsScene):
         self.app = app
 
     def mousePressEvent(self, event):
+        log_event("HeaderScene.mousePressEvent", f"Pos: {event.scenePos().x()}, {event.scenePos().y()}")
         if hasattr(self.app, 'hv') and event.widget() != self.app.hv.viewport():
             return
 
@@ -502,8 +507,55 @@ class ChartScene(QGraphicsScene):
         super().__init__()
         self.app = app
         self.start_x = 0
+        self.setItemIndexMethod(QGraphicsScene.NoIndex)
+        if hasattr(self.app, 'chart_view') and self.app.chart_view:
+            self.app.chart_view.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
+
+    def drawBackground(self, painter, rect):
+        super().drawBackground(painter, rect)
+        
+        if not hasattr(self.app, 'min_date') or not hasattr(self.app, 'day_width') or getattr(self.app, 'day_width', 0) <= 0:
+            return
+            
+        left_x = rect.left()
+        right_x = rect.right()
+        
+        start_day_idx = max(0, int(left_x / self.app.day_width))
+        end_day_idx = int(right_x / self.app.day_width) + 1
+        
+        display_days = getattr(self.app, 'display_days', 0)
+        end_day_idx = min(end_day_idx, display_days)
+        
+        painter.setPen(Qt.NoPen)
+        
+        for i in range(start_day_idx, end_day_idx):
+            d = self.app.min_date + timedelta(days=i)
+            x = i * self.app.day_width
+            d_str = d.strftime("%Y-%m-%d")
+            
+            custom_status = self.app.custom_holidays.get(d_str)
+            is_public = jpholiday.is_holiday(d)
+            
+            bg = None
+            if custom_status == "営業日":
+                pass
+            else:
+                is_custom_holiday = (custom_status is not None and custom_status != "営業日")
+                if d.weekday() == 5:
+                    if is_custom_holiday or is_public:
+                        bg = QColor(255, 240, 240)
+                    else:
+                        bg = QColor(240, 248, 255)
+                elif d.weekday() == 6 or is_public or is_custom_holiday:
+                    bg = QColor(255, 240, 240)
+                    
+            if bg:
+                painter.setBrush(QBrush(bg))
+                painter.drawRect(QRectF(x, rect.top(), self.app.day_width, rect.height()))
 
     def mousePressEvent(self, e):
+        log_event("ChartScene.mousePressEvent", f"Pos: {e.scenePos().x()}, {e.scenePos().y()}, Button: {e.button()}")
+        
         item = self.itemAt(e.scenePos(), self.app.chart_view.transform())
         target_bar = None
         if item:
@@ -528,7 +580,6 @@ class ChartScene(QGraphicsScene):
                 else:
                     self.start_x = 0
             
-            # 重要：背景クリック時はデフォルト処理を行わずイベントを完全に消費する
             e.accept()
             return
 
@@ -547,7 +598,25 @@ class ChartScene(QGraphicsScene):
         
         super().mousePressEvent(e)
 
+    def mouseMoveEvent(self, e):
+        item = self.itemAt(e.scenePos(), self.app.chart_view.transform())
+        target_bar = None
+        if item:
+            temp = item
+            while temp:
+                if isinstance(temp, GanttBarItem):
+                    target_bar = temp
+                    break
+                temp = temp.parentItem()
+                
+        if not target_bar:
+            e.accept()
+            return
+            
+        super().mouseMoveEvent(e)
+
     def mouseReleaseEvent(self, e):
+        log_event("ChartScene.mouseReleaseEvent", f"Pos: {e.scenePos().x()}, {e.scenePos().y()}, start_x: {self.start_x}")
         if self.start_x > 0:
             item = self.itemAt(e.scenePos(), self.app.chart_view.transform())
             target_bar = None
@@ -564,10 +633,9 @@ class ChartScene(QGraphicsScene):
                     sx = self.start_x
                     ex = e.scenePos().x()
                     ey = e.scenePos().y()
-                    QTimer.singleShot(0, lambda: self.app.create_task_from_drag(sx, ex, ey))
+                    self.app.create_task_from_drag(sx, ex, ey)
             self.start_x = 0
             
-        # 背景リリース時もイベントを消費して終了（デフォルト処理による再描画干渉を防ぐ）
         item = self.itemAt(e.scenePos(), self.app.chart_view.transform())
         target_bar = None
         if item:
@@ -585,6 +653,7 @@ class ChartScene(QGraphicsScene):
         super().mouseReleaseEvent(e)
 
     def mouseDoubleClickEvent(self, e):
+        log_event("ChartScene.mouseDoubleClickEvent", f"Pos: {e.scenePos().x()}, {e.scenePos().y()}")
         item = self.itemAt(e.scenePos(), self.app.chart_view.transform())
         target_bar = None
         if item:
@@ -613,15 +682,15 @@ class ChartScene(QGraphicsScene):
                         self.app.save_state()
                         task['periods'].append({"start_date": d_str, "end_date": d_str, "text": ""})
                         
-                        QTimer.singleShot(0, lambda: safe_update_ui(self.app))
+                        QTimer.singleShot(100, self.app.update_ui)
             
-            # 背景ダブルクリック時もイベントを消費して終了
             e.accept()
             return
 
         super().mouseDoubleClickEvent(e)
 
     def contextMenuEvent(self, e):
+        log_event("ChartScene.contextMenuEvent", f"Pos: {e.scenePos().x()}, {e.scenePos().y()}")
         item = self.itemAt(e.scenePos(), self.app.chart_view.transform())
         if item and not isinstance(item, GanttBarItem):
             item = None
@@ -687,15 +756,15 @@ class ChartScene(QGraphicsScene):
                                     self.app.pending_selection.append(id(new_period))
                                 except Exception:
                                     continue
-                    QTimer.singleShot(0, lambda: safe_update_ui(self.app))
+                    QTimer.singleShot(100, self.app.update_ui)
                 except Exception as e:
-                    print(f"Error in paste action: {e}")
+                    log_event("Error in paste action", str(e))
             elif action == add_period_action and add_period_action:
                 if 'periods' not in task:
                     task['periods'] = [{'start_date': task.get('start_date', ''), 'end_date': task.get('end_date', '')}]
                 self.app.save_state()
                 task['periods'].append({"start_date": d_str, "end_date": d_str})
-                QTimer.singleShot(0, lambda: safe_update_ui(self.app))
+                QTimer.singleShot(100, self.app.update_ui)
             elif action == add_task_in_group and add_task_in_group:
                 self.app.save_state()
                 new_task = {
@@ -705,6 +774,6 @@ class ChartScene(QGraphicsScene):
                     "color": "#0078d4"
                 }
                 self.app.tasks.insert(info['index'] + 1, new_task)
-                QTimer.singleShot(0, lambda: safe_update_ui(self.app))
+                QTimer.singleShot(100, self.app.update_ui)
         else:
             super().contextMenuEvent(e)
