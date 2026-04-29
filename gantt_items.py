@@ -2,8 +2,8 @@
 from datetime import datetime, timedelta
 from PySide6.QtWidgets import (QGraphicsRectItem, QGraphicsTextItem, QGraphicsScene, 
                                QMenu, QLineEdit, QInputDialog)
-from PySide6.QtCore import Qt, QRectF, QTimer
-from PySide6.QtGui import QBrush, QPen, QColor, QFont
+from PySide6.QtCore import Qt, QRectF, QTimer, QPointF
+from PySide6.QtGui import QBrush, QPen, QColor, QFont, QPainter
 from dialogs import ColorGridDialog
 
 class GanttBarItem(QGraphicsRectItem):
@@ -113,110 +113,140 @@ class GanttBarItem(QGraphicsRectItem):
             w = self.rect().width()
             margin = 12 if w <= self.app.day_width else 10
             margin = min(margin, w / 2 - 2)
+            
             if x < margin:
                 self.resizing_left = True
             elif x > w - margin:
                 self.resizing_right = True
             else:
                 self.setCursor(Qt.ClosedHandCursor)
+                # 移動開始時の位置を保持
+                self.drag_start_scene_pos = event.scenePos()
+                # 選択されているすべてのアイテムの開始位置を記録
+                self.drag_item_starts = {}
+                selected_items = [it for it in self.scene().selectedItems() if isinstance(it, GanttBarItem)]
+                if self not in selected_items:
+                    selected_items.append(self)
+                
+                for it in selected_items:
+                    it.drag_start_pos = it.pos()
+                    it.drag_start_row = it.row
+                    
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
-        snap = self.app.day_width
+        snap_x = self.app.day_width
+        snap_y = self.app.row_height
+        
         if self.resizing_left:
             diff = event.scenePos().x() - event.lastScenePos().x()
             nr = self.rect()
-            if nr.width() - diff >= snap:
+            if nr.width() - diff >= snap_x:
                 self.setPos(self.pos().x() + diff, self.pos().y())
                 self.setRect(0, 0, nr.width() - diff, nr.height())
         elif self.resizing_right:
             diff = event.scenePos().x() - event.lastScenePos().x()
             nr = self.rect()
-            if nr.width() + diff >= snap:
+            if nr.width() + diff >= snap_x:
                 self.setRect(0, 0, nr.width() + diff, nr.height())
+        elif hasattr(self, 'drag_start_scene_pos'):
+            # まとめて移動の処理
+            delta = event.scenePos() - self.drag_start_scene_pos
+            dx = round(delta.x() / snap_x) * snap_x
+            dy = round(delta.y() / snap_y) * snap_y
+            
+            selected_items = [it for it in self.scene().selectedItems() if isinstance(it, GanttBarItem)]
+            if self not in selected_items:
+                selected_items.append(self)
+                
+            for it in selected_items:
+                if hasattr(it, 'drag_start_pos'):
+                    # 行移動の制限
+                    new_row = it.drag_start_row + int(dy / snap_y)
+                    max_row = len(self.app.visible_tasks_info) - 1 if self.app.visible_tasks_info else 0
+                    new_row = max(0, min(max_row, new_row))
+                    
+                    it.setPos(it.drag_start_pos.x() + dx, new_row * snap_y + 10)
+                    it.update_appearance()
         else:
             super().mouseMoveEvent(event)
-            # マウスカーソルの位置に基づいて行の中心にスナップ
-            row = int(event.scenePos().y() / self.app.row_height)
-            # タスクが存在する行の範囲内に制限
-            max_row = len(self.app.visible_tasks_info) - 1 if self.app.visible_tasks_info else 0
-            row = max(0, min(max_row, row))
-            self.setPos(self.pos().x(), row * self.app.row_height + 10)
+            
         self.update_appearance()
 
     def mouseReleaseEvent(self, event):
         was_resizing = self.resizing_left or self.resizing_right
         self.resizing_left = self.resizing_right = False
         self.setCursor(Qt.OpenHandCursor)
+        
         snap = self.app.day_width
         sx = round(self.pos().x() / snap) * snap
         sw = max(snap, round(self.rect().width() / snap) * snap)
-        
         sd = self.app.min_date + timedelta(days=sx / self.app.day_width)
         ed = sd + timedelta(days=sw / self.app.day_width - 0.001)
 
-        # 移動先の行を判定
-        new_row = int(event.scenePos().y() / self.app.row_height)
-        max_row = len(self.app.visible_tasks_info) - 1 if self.app.visible_tasks_info else 0
-        new_row = max(0, min(max_row, new_row))
-        
-        # サイズ調整中ではなかった場合のみ行移動を許可
-        if not was_resizing and new_row != self.row:
-            target_info = self.app.visible_tasks_info[new_row]
-            target_task = target_info['task']
-            
-            # グループ行への移動は禁止
-            if target_task.get('is_group'):
-                QTimer.singleShot(0, self.app.update_ui)
-                super().mouseReleaseEvent(event)
-                return
-
-            # 移動元・移動先の両方で 'periods' 形式を確定させる
-            for t in [self.task, target_task]:
-                if 'periods' not in t:
-                    t['periods'] = [{'start_date': t.get('start_date', ''), 'end_date': t.get('end_date', '')}]
-            
+        if was_resizing:
+            # 単一バーのリサイズ確定処理
+            if 'periods' not in self.task:
+                self.task['periods'] = [{'start_date': self.task.get('start_date', ''), 'end_date': self.task.get('end_date', '')}]
             if 0 <= self.period_index < len(self.task['periods']):
-                # 期間データを移動
-                p = self.task['periods'].pop(self.period_index)
-                p['start_date'] = sd.strftime("%Y-%m-%d")
-                p['end_date'] = ed.strftime("%Y-%m-%d")
+                self.task['periods'][self.period_index]['start_date'] = sd.strftime("%Y-%m-%d")
+                self.task['periods'][self.period_index]['end_date'] = ed.strftime("%Y-%m-%d")
+        elif hasattr(self, 'drag_start_scene_pos'):
+            # まとめて移動の確定処理
+            selected_items = [it for it in self.scene().selectedItems() if isinstance(it, GanttBarItem)]
+            if self not in selected_items:
+                selected_items.append(self)
                 
-                target_task = self.app.tasks[new_row]
-                target_task['periods'].append(p)
+            moves = []
+            for it in selected_items:
+                isx = round(it.pos().x() / snap) * snap
+                isw = max(snap, round(it.rect().width() / snap) * snap)
+                isd = self.app.min_date + timedelta(days=isx / self.app.day_width)
+                ied = isd + timedelta(days=isw / self.app.day_width - 0.001)
                 
-                # 互換性のためメインの日付フィールドも更新
-                for t in [self.task, target_task]:
-                    if t['periods']:
-                        t['start_date'] = t['periods'][0]['start_date']
-                        t['end_date'] = t['periods'][0]['end_date']
-                
-                QTimer.singleShot(0, self.app.update_ui)
+                new_row = int(it.pos().y() / self.app.row_height)
+                moves.append({
+                    'item': it,
+                    'start_date': isd.strftime("%Y-%m-%d"),
+                    'end_date': ied.strftime("%Y-%m-%d"),
+                    'new_row': new_row,
+                    'task': it.task,
+                    'period_idx': it.period_index
+                })
             
-            super().mouseReleaseEvent(event)
-            return
+            # インデックスのずれを防ぐため降順にソートして取り出す
+            moves.sort(key=lambda x: (x['task'] is self.task, x['period_idx']), reverse=True)
+            
+            for m in moves:
+                task = m['task']
+                if 'periods' in task and 0 <= m['period_idx'] < len(task['periods']):
+                    p = task['periods'].pop(m['period_idx'])
+                    p['start_date'] = m['start_date']
+                    p['end_date'] = m['end_date']
+                    m['period_data'] = p
+                else:
+                    m['period_data'] = {'start_date': m['start_date'], 'end_date': m['end_date']}
+            
+            # 新しいタスクへ追加
+            for m in moves:
+                target_idx = m['new_row']
+                if target_idx < len(self.app.visible_tasks_info):
+                    target_task = self.app.visible_tasks_info[target_idx]['task']
+                    if target_task.get('is_group'):
+                        m['task'].setdefault('periods', []).append(m['period_data'])
+                    else:
+                        target_task.setdefault('periods', []).append(m['period_data'])
+                else:
+                    m['task'].setdefault('periods', []).append(m['period_data'])
 
-        self.setPos(sx, self.pos().y())
-        self.setRect(0, 0, sw, self.rect().height())
+        if hasattr(self, 'drag_start_scene_pos'):
+            del self.drag_start_scene_pos
+            
         super().mouseReleaseEvent(event)
         
-        if 'periods' not in self.task:
-            self.task['periods'] = [{'start_date': self.task.get('start_date', ''), 'end_date': self.task.get('end_date', '')}]
-            
-        self.task['periods'][self.period_index]['start_date'] = sd.strftime("%Y-%m-%d")
-        self.task['periods'][self.period_index]['end_date'] = ed.strftime("%Y-%m-%d")
-        
-        # update single fields for backwards compatibility
-        self.task['start_date'] = self.task['periods'][0]['start_date']
-        self.task['end_date'] = self.task['periods'][0]['end_date']
-        
-        if self.scene():
-            for item in self.scene().items():
-                if isinstance(item, GanttBarItem) and item.task is self.task:
-                    item.update_appearance()
-                    
-        self.app.sync_table_from_tasks()
-        self.app.update_ui()
+        # シーンのクリアによるクラッシュを防ぐため、UI更新を遅延させる
+        QTimer.singleShot(0, self.app.sync_table_from_tasks)
+        QTimer.singleShot(0, self.app.update_ui)
 
     def mouseDoubleClickEvent(self, event):
         # Prevent default double click which was old edit open
@@ -288,14 +318,45 @@ class ChartScene(QGraphicsScene):
         super().__init__()
         self.app = app
         self.start_x = 0
+        self.selection_rect = None
+        self.selection_start = None
 
     def mousePressEvent(self, e):
         item = self.itemAt(e.scenePos(), self.app.chart_view.transform())
         if not item and e.button() == Qt.LeftButton:
-            self.start_x = e.scenePos().x()
+            if e.modifiers() & Qt.ShiftModifier:
+                # 範囲選択の開始
+                self.selection_start = e.scenePos()
+                self.selection_rect = self.addRect(QRectF(self.selection_start, self.selection_start), 
+                                                 QPen(QColor(0, 120, 212), 1, Qt.DashLine), 
+                                                 QBrush(QColor(0, 120, 212, 40)))
+                self.selection_rect.setZValue(100)
+            else:
+                # 通常のタスク作成ドラッグ
+                self.start_x = e.scenePos().x()
         super().mousePressEvent(e)
 
+    def mouseMoveEvent(self, e):
+        if self.selection_rect:
+            rect = QRectF(self.selection_start, e.scenePos()).normalized()
+            self.selection_rect.setRect(rect)
+            return # 他のアイテムへのイベントを抑制
+        super().mouseMoveEvent(e)
+
     def mouseReleaseEvent(self, e):
+        if self.selection_rect:
+            rect = self.selection_rect.rect()
+            # 範囲内のバーを選択状態にする
+            self.clearSelection()
+            for item in self.items(rect):
+                if isinstance(item, GanttBarItem):
+                    item.setSelected(True)
+            
+            self.removeItem(self.selection_rect)
+            self.selection_rect = None
+            self.selection_start = None
+            return
+
         if self.start_x > 0:
             item = self.itemAt(e.scenePos(), self.app.chart_view.transform())
             if not item:

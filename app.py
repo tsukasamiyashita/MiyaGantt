@@ -654,6 +654,7 @@ class GanttApp(QMainWindow):
                 tasks_to_sum.append(self.tasks[i])
         
         for task in tasks_to_sum:
+            t_color = task.get('color', '#0078d4')
             for p in task.get('periods', []):
                 if not p.get('start_date') or not p.get('end_date'): continue
                 try:
@@ -661,8 +662,11 @@ class GanttApp(QMainWindow):
                     ped = datetime.strptime(p['end_date'], "%Y-%m-%d")
                     overlap = (min(ped, timeline_end) - max(psd, timeline_start)).days + 1
                     if overlap > 0:
-                        color = p.get('color', task.get('color', '#0078d4'))
-                        day_map[color] = day_map.get(color, 0) + overlap
+                        p_color = p.get('color')
+                        # バーの色がタスクの色と異なる場合は集計から除外
+                        if p_color and p_color.lower() != t_color.lower():
+                            continue
+                        day_map[t_color] = day_map.get(t_color, 0) + overlap
                 except ValueError:
                     continue
         return day_map

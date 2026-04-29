@@ -123,8 +123,14 @@ class ChartRenderer:
                         sub_t = self.app.tasks[i]
                         if sub_t.get('is_group'): break
                         sub_periods = sub_t.get('periods', [])
+                        t_color = sub_t.get('color', '#0078d4')
                         for p in sub_periods:
                             if not p.get('start_date') or not p.get('end_date'): continue
+                            
+                            p_color = p.get('color')
+                            if p_color and p_color.lower() != t_color.lower():
+                                continue
+
                             psd = datetime.strptime(p['start_date'], "%Y-%m-%d")
                             ped = datetime.strptime(p['end_date'], "%Y-%m-%d")
                             s_idx = max(0, (psd - self.app.min_date).days)
