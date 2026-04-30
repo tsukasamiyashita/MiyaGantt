@@ -538,11 +538,8 @@ class GanttApp(QMainWindow):
             groups_to_process.append((temp_group, temp_tasks))
             
         for g, tasks in groups_to_process:
-            group_res = float(g.get('headcount', 1.0)) if g else 1.0
-            
-            manual_res_per_day = {}
-            auto_tasks = []
-            
+            # グループ内の各日における作成タスクの合計工数を計算（これが生成タスクの進行スピードになる）
+            daily_speed = {}
             for t in tasks:
                 if t.get('mode', 'manual') == 'manual':
                     hc = float(t.get('headcount', 1.0))
@@ -553,10 +550,13 @@ class GanttApp(QMainWindow):
                             ed = datetime.strptime(p['end_date'], "%Y-%m-%d")
                             for i in range((ed - sd).days + 1):
                                 d_str = (sd + timedelta(days=i)).strftime("%Y-%m-%d")
-                                manual_res_per_day[d_str] = manual_res_per_day.get(d_str, 0.0) + hc
+                                daily_speed[d_str] = daily_speed.get(d_str, 0.0) + hc
                         except ValueError:
                             pass
-                else:
+            
+            auto_tasks = []
+            for t in tasks:
+                if t.get('mode', 'manual') != 'manual':
                     sd_str = t.get('auto_start_date')
                     if not sd_str:
                         sd_str = self.min_date.strftime("%Y-%m-%d")
@@ -580,21 +580,23 @@ class GanttApp(QMainWindow):
             max_days = 3650
             days_simulated = 0
             
+            # 作成タスクが1つも存在しない場合は進行できない
+            has_speed = any(s > 0 for s in daily_speed.values())
+            if not has_speed:
+                for at in auto_tasks:
+                    t = at['task']
+                    sd_str = at['start'].strftime("%Y-%m-%d")
+                    t['periods'] = [{"start_date": sd_str, "end_date": sd_str, "color": t.get('color'), "text": ""}]
+                continue
+            
+            # 生成タスクの開始日から設定した工数(rem_work)を引いていき、工数分のバーを作成する
             while any(at['rem_work'] > 0 for at in auto_tasks) and days_simulated < max_days:
                 d_str = current_date.strftime("%Y-%m-%d")
                 
-                # その日に消化可能な工数 ＝ グループの人数 － その日の作成タスクの合計人数
-                # 土日・祝日・カスタム休日は基本の稼働能力を0とする
-                is_holiday = jpholiday.is_holiday(current_date) or current_date.weekday() >= 5 or d_str in self.custom_holidays
-                day_capacity = 0.0 if is_holiday else group_res
-                
-                avail_res = day_capacity - manual_res_per_day.get(d_str, 0.0)
-                # 0未満にならないようにする（マイナスの場合はその日の進捗は0）
-                avail_res = max(0.0, avail_res)
-                
+                avail_res = daily_speed.get(d_str, 0.0)
                 active_tasks = [at for at in auto_tasks if at['start'] <= current_date and at['rem_work'] > 0]
                 
-                if active_tasks:
+                if active_tasks and avail_res > 0.001:
                     unallocated_res = avail_res
                     tasks_to_allocate = active_tasks.copy()
                     
@@ -783,24 +785,29 @@ class GanttApp(QMainWindow):
                 tasks_to_sum.append(self.tasks[i])
         
         for task in tasks_to_sum:
-            # 「生成モード」は集計から除外
             if task.get('mode') == 'auto':
                 continue
                 
             t_color = task.get('color', '#0078d4')
-            hc = task.get('headcount', 1.0)
-                
+            hc = float(task.get('headcount', 1.0))
+            
             for p in task.get('periods', []):
                 if not p.get('start_date') or not p.get('end_date'): continue
                 try:
                     psd = datetime.strptime(p['start_date'], "%Y-%m-%d")
                     ped = datetime.strptime(p['end_date'], "%Y-%m-%d")
-                    overlap = (min(ped, timeline_end) - max(psd, timeline_start)).days + 1
-                    if overlap > 0:
-                        p_color = p.get('color')
-                        if p_color and p_color.lower() != t_color.lower():
-                            continue
-                        day_map[t_color] = day_map.get(t_color, 0) + (overlap * hc)
+                    
+                    calc_start = max(psd, timeline_start)
+                    calc_end = min(ped, timeline_end)
+                    
+                    if calc_start <= calc_end:
+                        overlap = (calc_end - calc_start).days + 1
+                        if overlap > 0:
+                            p_color = p.get('color')
+                            if p_color and p_color.lower() != t_color.lower():
+                                continue
+                            # 休日を含めた全ての重なり日数を計上
+                            day_map[t_color] = day_map.get(t_color, 0.0) + (overlap * hc)
                 except ValueError:
                     continue
         return day_map
