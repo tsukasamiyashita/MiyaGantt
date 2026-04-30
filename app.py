@@ -3,6 +3,7 @@ import sys
 import os
 import json
 import calendar
+import jpholiday
 from datetime import datetime, timedelta
 
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
@@ -582,10 +583,14 @@ class GanttApp(QMainWindow):
             while any(at['rem_work'] > 0 for at in auto_tasks) and days_simulated < max_days:
                 d_str = current_date.strftime("%Y-%m-%d")
                 
-                # その日に消化可能な工数 ＝ グループの人数 ＋ その日の作成タスクの合計人数
-                avail_res = group_res + manual_res_per_day.get(d_str, 0.0)
-                # 0以下の場合は最低限の進捗(0.001)を保証して無限ループを防ぐ
-                avail_res = max(0.001, avail_res)
+                # その日に消化可能な工数 ＝ グループの人数 － その日の作成タスクの合計人数
+                # 土日・祝日・カスタム休日は基本の稼働能力を0とする
+                is_holiday = jpholiday.is_holiday(current_date) or current_date.weekday() >= 5 or d_str in self.custom_holidays
+                day_capacity = 0.0 if is_holiday else group_res
+                
+                avail_res = day_capacity - manual_res_per_day.get(d_str, 0.0)
+                # 0未満にならないようにする（マイナスの場合はその日の進捗は0）
+                avail_res = max(0.0, avail_res)
                 
                 active_tasks = [at for at in auto_tasks if at['start'] <= current_date and at['rem_work'] > 0]
                 

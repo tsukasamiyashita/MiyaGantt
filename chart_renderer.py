@@ -122,6 +122,8 @@ class ChartRenderer:
                     for i in range(info['index'] + 1, len(self.app.tasks)):
                         sub_t = self.app.tasks[i]
                         if sub_t.get('is_group'): break
+                        if sub_t.get('mode') == 'auto':
+                            continue
                         sub_periods = sub_t.get('periods', [])
                         t_color = sub_t.get('color', '#0078d4')
                         for p in sub_periods:
@@ -136,11 +138,7 @@ class ChartRenderer:
                             s_idx = max(0, (psd - self.app.min_date).days)
                             e_idx = min(self.app.display_days - 1, (ped - self.app.min_date).days)
                             
-                            if sub_t.get('mode') == 'auto':
-                                sub_hc = sub_t.get('workload', 10.0) / max(1, (ped - psd).days + 1)
-                            else:
-                                sub_hc = sub_t.get('headcount', 1.0)
-                                
+                            sub_hc = sub_t.get('headcount', 1.0)
                             for d_idx in range(s_idx, e_idx + 1):
                                 counts[d_idx] += sub_hc
                     

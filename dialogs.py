@@ -181,6 +181,8 @@ class SummaryDialog(QDialog):
             for c, (h_start, h_end, label) in enumerate(headers):
                 color_map = {}
                 for t in g['tasks']:
+                    if t.get('mode') == 'auto':
+                        continue
                     t_color = t.get('color', '#0078d4')
                     headcount = t.get('headcount', 1)
                     for p in t.get('periods', []):
