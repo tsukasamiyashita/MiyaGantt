@@ -15,7 +15,7 @@ from PySide6.QtGui import QBrush, QPen, QColor, QFont, QIcon, QPainter
 
 from dialogs import SettingsDialog, ColorGridDialog, SummaryDialog, HelpDialog
 from gantt_items import HeaderScene, ChartScene
-from task_table import TaskTable
+from task_table import TaskTable, HeadcountDelegate
 from chart_renderer import ChartRenderer
 
 class GanttApp(QMainWindow):
@@ -214,6 +214,7 @@ class GanttApp(QMainWindow):
         self.table.verticalHeader().setDefaultSectionSize(self.row_height)
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.table.setItemDelegateForColumn(4, HeadcountDelegate(self.table))
         
         self.table.itemChanged.connect(self.on_table_item_changed)
         self.table.cellClicked.connect(self.on_table_cell_clicked)
@@ -977,28 +978,29 @@ class GanttApp(QMainWindow):
             if t.get('mode') == 'auto':
                 try:
                     val = item.text().strip()
-                    if val == "":
+                    if val == "" or val == "制限なし":
                         t['headcount'] = 0.0
                     else:
-                        val = float(val)
-                        t['headcount'] = max(0.0, val)
+                        t['headcount'] = float(val)
                 except ValueError:
                     pass
                 
                 self.table.blockSignals(True)
                 hc = t.get('headcount', 0.0)
-                item.setText(f"{hc:.1f}" if hc > 0 else "")
+                item.setText(f"{int(hc)}" if hc > 0 else "制限なし")
                 self.table.blockSignals(False)
                 self.recalculate_auto_tasks()
             else:
                 try:
-                    val = float(item.text().strip())
-                    t['headcount'] = max(0.1 if t.get('is_group') else 0.0, val)
+                    val = item.text().strip()
+                    if val == "" or val == "制限なし":
+                        val = "1"
+                    t['headcount'] = max(1.0, float(val))
                 except ValueError:
                     pass
                 
                 self.table.blockSignals(True)
-                item.setText(f"{t.get('headcount', 1.0):.1f}")
+                item.setText(f"{int(t.get('headcount', 1.0))}")
                 self.table.blockSignals(False)
                 self.recalculate_auto_tasks()
             

@@ -272,7 +272,7 @@ class ChartRenderer:
                 item_mode.setText("")
                 item_mode.setBackground(QColor(242, 242, 242))
                 
-                item_hc.setText(f"{t.get('headcount', 1.0):.1f}")
+                item_hc.setText(f"{int(t.get('headcount', 1.0))}")
                 item_hc.setTextAlignment(Qt.AlignCenter)
                 item_hc.setBackground(QColor(242, 242, 242))
                 
@@ -292,11 +292,11 @@ class ChartRenderer:
                 
                 if is_auto:
                     hc = t.get('headcount', 0.0)
-                    item_hc.setText(f"{hc:.1f}" if hc > 0 else "")
+                    item_hc.setText(f"{int(hc)}" if hc > 0 else "")
                     item_hc.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
                     item_period.setText(t.get('auto_start_date', ''))
                 else:
-                    item_hc.setText(f"{t.get('headcount', 1.0):.1f}")
+                    item_hc.setText(f"{int(t.get('headcount', 1.0))}")
                     periods = t.get('periods', [])
                     p_strs = []
                     for p in periods:

@@ -1,6 +1,33 @@
 # tsukasamiyashita/miyagantt/MiyaGantt-46a1664b6d1737cb32f1dd17429ce06cca8dc678/task_table.py
-from PySide6.QtWidgets import QHeaderView, QTableWidget, QMenu
+from PySide6.QtWidgets import QHeaderView, QTableWidget, QMenu, QStyledItemDelegate, QComboBox
 from PySide6.QtCore import Qt
+
+class HeadcountDelegate(QStyledItemDelegate):
+    def createEditor(self, parent, option, index):
+        editor = QComboBox(parent)
+        editor.addItem("制限なし")
+        for i in range(1, 21):
+            editor.addItem(str(i))
+        return editor
+
+    def setEditorData(self, editor, index):
+        text = index.model().data(index, Qt.EditRole)
+        if not text or text == "制限なし":
+            editor.setCurrentIndex(0)
+        else:
+            val_str = str(text).replace('.0', '')
+            idx = editor.findText(val_str)
+            if idx >= 0:
+                editor.setCurrentIndex(idx)
+            else:
+                editor.setCurrentIndex(0)
+
+    def setModelData(self, editor, model, index):
+        val = editor.currentText()
+        if val == "制限なし":
+            model.setData(index, "", Qt.EditRole)
+        else:
+            model.setData(index, val, Qt.EditRole)
 
 class HideableHeader(QHeaderView):
     def __init__(self, orientation, parent=None):
