@@ -180,6 +180,14 @@ class GanttBarItem(QGraphicsRectItem):
                     new_row = it.drag_start_row + int(dy / snap_y)
                     max_row = len(self.app.visible_tasks_info) - 1 if self.app.visible_tasks_info else 0
                     new_row = max(0, min(max_row, new_row))
+                    
+                    target_task = self.app.visible_tasks_info[new_row]['task']
+                    source_mode = it.task.get('mode', 'manual')
+                    target_mode = target_task.get('mode', 'manual')
+                    
+                    if target_task.get('is_group') or source_mode != target_mode:
+                        new_row = it.drag_start_row
+                        
                     it.setPos(it.drag_start_pos.x() + dx, new_row * snap_y + 10)
                     it.update_appearance()
         else:
@@ -251,7 +259,10 @@ class GanttBarItem(QGraphicsRectItem):
                 target_idx = m['new_row']
                 if target_idx < len(self.app.visible_tasks_info):
                     target_task = self.app.visible_tasks_info[target_idx]['task']
-                    if target_task.get('is_group'):
+                    source_mode = m['task'].get('mode', 'manual')
+                    target_mode = target_task.get('mode', 'manual')
+                    
+                    if target_task.get('is_group') or source_mode != target_mode:
                         m['task'].setdefault('periods', []).append(m['period_data'])
                     else:
                         target_task.setdefault('periods', []).append(m['period_data'])
