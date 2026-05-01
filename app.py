@@ -179,7 +179,7 @@ class GanttApp(QMainWindow):
         self.col_toggle_layout.setSpacing(2)
         self.col_actions = {}
         col_info = [
-            (0, "マーク"), (1, "開閉"), (3, "モード"), (4, "人/工"), 
+            (0, "マーク"), (1, "開閉"), (3, "モード"), (4, "人数"), 
             (5, "進捗"), (6, "期間"), (7, "色"), (8, "合計")
         ]
         for idx, name in col_info:
@@ -199,7 +199,7 @@ class GanttApp(QMainWindow):
         self.left_layout.addLayout(self.col_toggle_layout)
 
         self.table = TaskTable(0, 8)
-        self.table.setHorizontalHeaderLabels(["", "", "タスク名", "モード", "人数/工数", "進捗(%)", "期間/開始日", "色"])
+        self.table.setHorizontalHeaderLabels(["", "", "タスク名", "モード", "人数", "進捗(%)", "期間/開始日", "色"])
         self.table.setColumnWidth(0, 25)
         self.table.setColumnWidth(1, 35)
         self.table.setColumnWidth(2, 170)
@@ -786,14 +786,14 @@ class GanttApp(QMainWindow):
             curr = curr - timedelta(days=curr.weekday())
             for _ in range(count):
                 end_d = curr + timedelta(days=6)
-                label = f"{curr.strftime('%m/%d')}~{end_d.strftime('%m/%d')}"
+                label = f"{curr.strftime('%m/%d')}~{end_d.strftime('%m/%d')} 工数"
                 headers.append((curr, end_d, label))
                 curr += timedelta(days=7)
         elif unit_type == 'month':
             curr = curr.replace(day=1)
             for _ in range(count):
                 last_day = calendar.monthrange(curr.year, curr.month)[1]
-                headers.append((curr, curr.replace(day=last_day), curr.strftime("%Y/%m")))
+                headers.append((curr, curr.replace(day=last_day), f"{curr.strftime('%Y/%m')} 工数"))
                 m = curr.month + 1
                 y = curr.year
                 if m > 12: m = 1; y += 1
@@ -801,7 +801,7 @@ class GanttApp(QMainWindow):
         elif unit_type == 'year':
             curr = curr.replace(month=1, day=1)
             for _ in range(count):
-                headers.append((curr, curr.replace(month=12, day=31), curr.strftime("%Y年")))
+                headers.append((curr, curr.replace(month=12, day=31), f"{curr.strftime('%Y年')} 工数"))
                 curr = curr.replace(year=curr.year + 1)
         return headers
 

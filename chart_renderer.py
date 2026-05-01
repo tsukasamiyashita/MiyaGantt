@@ -198,7 +198,7 @@ class ChartRenderer:
         total_cols = base_col_count + len(headers)
         self.app.table.setColumnCount(total_cols)
         
-        labels = ["", "", "タスク名", "モード", "人数/工数", "進捗(%)", "期間/開始日", "色"] + [h[2] for h in headers]
+        labels = ["", "", "タスク名", "モード", "人数", "進捗(%)", "期間/開始日", "色"] + [h[2] for h in headers]
         self.app.table.setHorizontalHeaderLabels(labels)
         
         new_rows = len(self.app.visible_tasks_info)

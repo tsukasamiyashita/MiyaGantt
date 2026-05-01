@@ -27,7 +27,7 @@ class TaskTable(QTableWidget):
 
     def show_header_menu(self, pos):
         menu = QMenu(self)
-        column_names = ["選択マーク", "開閉ボタン", "タスク名", "モード", "人数/工数", "進捗(%)", "期間/開始日", "色", "集計"]
+        column_names = ["選択マーク", "開閉ボタン", "タスク名", "モード", "人数", "進捗(%)", "期間/開始日", "色", "集計"]
         for i, name in enumerate(column_names):
             action = menu.addAction(name)
             action.setCheckable(True)
