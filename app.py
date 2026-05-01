@@ -673,10 +673,20 @@ class GanttApp(QMainWindow):
             t["periods"] = []
             t["headcount"] = 1.0
             
-        self.tasks.append(t)
+        r = self.table.currentRow()
+        if r >= 0 and r < len(self.visible_tasks_info):
+            idx = self.visible_tasks_info[r]['index']
+            self.tasks.insert(idx + 1, t)
+        else:
+            self.tasks.append(t)
+            
         self.recalculate_auto_tasks()
         self.update_ui()
-        self.table.setCurrentCell(len(self.visible_tasks_info) - 1, 2)
+        
+        for i, info in enumerate(self.visible_tasks_info):
+            if info['task'] is t:
+                self.table.setCurrentCell(i, 2)
+                break
 
     def add_group(self):
         g = {
@@ -686,9 +696,19 @@ class GanttApp(QMainWindow):
             "headcount": 1.0,
             "color": "#555555"
         }
-        self.tasks.append(g)
+        r = self.table.currentRow()
+        if r >= 0 and r < len(self.visible_tasks_info):
+            idx = self.visible_tasks_info[r]['index']
+            self.tasks.insert(idx + 1, g)
+        else:
+            self.tasks.append(g)
+            
         self.update_ui()
-        self.table.setCurrentCell(len(self.visible_tasks_info) - 1, 2)
+        
+        for i, info in enumerate(self.visible_tasks_info):
+            if info['task'] is g:
+                self.table.setCurrentCell(i, 2)
+                break
 
     def delete_task(self):
         r = self.table.currentRow()
@@ -1000,6 +1020,12 @@ class GanttApp(QMainWindow):
                         t['auto_start_date'] = t['periods'][0].get('start_date', '')
                     if 'workload' not in t:
                         t['workload'] = 1.0 # 変更
+                else:
+                    if t.get('periods'):
+                        for p in t['periods']:
+                            if p.get('text') in ["⚠️ キャパオーバー", "⚠️ 進行不可"]:
+                                p['text'] = ""
+                                p['color'] = t.get('color', '#0078d4')
                 self.recalculate_auto_tasks()
                 self.update_ui()
 
