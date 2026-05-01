@@ -803,10 +803,17 @@ class GanttApp(QMainWindow):
                     item_s = QTableWidgetItem()
                     self.table.setItem(r, col_idx, item_s)
                 
-                item_s.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+                is_auto = not t.get('is_group') and t.get('mode') == 'auto'
+                
+                if is_auto:
+                    item_s.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
+                    item_s.setText(f"{t.get('workload', 1.0):.1f}")
+                else:
+                    item_s.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+                    day_map = self.get_task_workload_in_range(t, info['index'], h_start, h_end)
+                    item_s.setText(self.format_summary_workload(day_map))
+                
                 item_s.setTextAlignment(Qt.AlignCenter)
-                day_map = self.get_task_workload_in_range(t, info['index'], h_start, h_end)
-                item_s.setText(self.format_summary_workload(day_map))
                 
                 if t.get('is_group'):
                     item_s.setBackground(QColor(242, 242, 242))
@@ -885,8 +892,14 @@ class GanttApp(QMainWindow):
                 col_idx = 8 + i
                 item_s = self.table.item(r, col_idx)
                 if item_s:
-                    day_map = self.get_task_workload_in_range(t, info['index'], h_start, h_end)
-                    item_s.setText(self.format_summary_workload(day_map))
+                    is_auto = not t.get('is_group') and t.get('mode') == 'auto'
+                    if is_auto:
+                        item_s.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
+                        item_s.setText(f"{t.get('workload', 1.0):.1f}")
+                    else:
+                        item_s.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+                        day_map = self.get_task_workload_in_range(t, info['index'], h_start, h_end)
+                        item_s.setText(self.format_summary_workload(day_map))
         self.table.blockSignals(False)
 
     def create_task_from_drag(self, x1, x2, y):
@@ -940,26 +953,19 @@ class GanttApp(QMainWindow):
         if col == 2:
             t['name'] = item.text().strip()
         elif col == 4:
-            try:
-                val = float(item.text().strip())
-                if t.get('is_group'):
-                    t['headcount'] = max(0.1, val)
-                elif t.get('mode') == 'auto':
-                    t['workload'] = max(0.1, val)
-                else:
-                    t['headcount'] = max(0.0, val)
-            except ValueError:
-                pass
-            
-            self.table.blockSignals(True)
-            if t.get('is_group'):
-                item.setText(f"{t.get('headcount', 1.0):.1f}")
-            elif t.get('mode') == 'auto':
-                item.setText(f"{t.get('workload', 1.0):.1f}") # フォーマットの初期値も1.0に変更しておく
+            if t.get('mode') == 'auto':
+                pass # 自動タスクの場合、人数/工数列は無視する
             else:
+                try:
+                    val = float(item.text().strip())
+                    t['headcount'] = max(0.1 if t.get('is_group') else 0.0, val)
+                except ValueError:
+                    pass
+                
+                self.table.blockSignals(True)
                 item.setText(f"{t.get('headcount', 1.0):.1f}")
-            self.table.blockSignals(False)
-            self.recalculate_auto_tasks()
+                self.table.blockSignals(False)
+                self.recalculate_auto_tasks()
             
         elif col == 5:
             if t.get('is_group'): return
@@ -987,6 +993,14 @@ class GanttApp(QMainWindow):
                     t['periods'] = parsed
                 else:
                     QMessageBox.warning(self, "エラー", "期間の形式が正しくありません。\n例: 04/01-04/05")
+        elif col >= 8:
+            if not t.get('is_group') and t.get('mode') == 'auto':
+                try:
+                    val = float(item.text().strip())
+                    t['workload'] = max(0.1, val)
+                except ValueError:
+                    pass
+                self.recalculate_auto_tasks()
         
         self.update_ui()
 

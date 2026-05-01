@@ -291,7 +291,8 @@ class ChartRenderer:
                 item_mode.setTextAlignment(Qt.AlignCenter)
                 
                 if is_auto:
-                    item_hc.setText(f"{t.get('workload', 10.0):.1f}")
+                    item_hc.setText("")
+                    item_hc.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                     item_period.setText(t.get('auto_start_date', ''))
                 else:
                     item_hc.setText(f"{t.get('headcount', 1.0):.1f}")
@@ -315,12 +316,17 @@ class ChartRenderer:
             for i, (h_start, h_end, _) in enumerate(headers):
                 col_idx = 8 + i
                 item_s = self.app.table.item(r, col_idx)
-                item_s.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+                
+                if not is_group and is_auto:
+                    item_s.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
+                    item_s.setText(f"{t.get('workload', 1.0):.1f}")
+                else:
+                    item_s.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+                    day_map = self.app.get_task_workload_in_range(t, info['index'], h_start, h_end)
+                    item_s.setText(self.app.format_summary_workload(day_map))
+                
                 item_s.setForeground(QColor(51, 51, 51))
                 item_s.setTextAlignment(Qt.AlignCenter)
-                
-                day_map = self.app.get_task_workload_in_range(t, info['index'], h_start, h_end)
-                item_s.setText(self.app.format_summary_workload(day_map))
                 
                 if is_group:
                     item_s.setBackground(QColor(242, 242, 242))
