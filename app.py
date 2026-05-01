@@ -569,7 +569,7 @@ class GanttApp(QMainWindow):
                     auto_tasks.append({
                         'task': t,
                         'start': start_date,
-                        'rem_work': float(t.get('workload', 10.0)),
+                        'rem_work': float(t.get('workload', 1.0)), # ★初期値を1.0に変更した場合の影響は既存タスクにはないが念の為ここも合わせておく
                         'end': None,
                         'last_progress': None
                     })
@@ -667,7 +667,7 @@ class GanttApp(QMainWindow):
         }
         if mode == "auto":
             t["auto_start_date"] = self.min_date.strftime("%Y-%m-%d")
-            t["workload"] = 10.0
+            t["workload"] = 1.0 # デフォルト値を変更
             t["periods"] = [{"start_date": t["auto_start_date"], "end_date": t["auto_start_date"]}]
         else:
             t["periods"] = []
@@ -889,7 +889,7 @@ class GanttApp(QMainWindow):
         
         if mode == "auto":
             t["auto_start_date"] = sd.strftime("%Y-%m-%d")
-            t["workload"] = 10.0
+            t["workload"] = 1.0 # デフォルト値を変更
             t["periods"] = [{"start_date": sd.strftime("%Y-%m-%d"), "end_date": sd.strftime("%Y-%m-%d")}]
         else:
             t["periods"] = [{"start_date": sd.strftime("%Y-%m-%d"), "end_date": ed.strftime("%Y-%m-%d")}]
@@ -935,7 +935,7 @@ class GanttApp(QMainWindow):
             if t.get('is_group'):
                 item.setText(f"{t.get('headcount', 1.0):.1f}")
             elif t.get('mode') == 'auto':
-                item.setText(f"{t.get('workload', 10.0):.1f}")
+                item.setText(f"{t.get('workload', 1.0):.1f}") # フォーマットの初期値も1.0に変更しておく
             else:
                 item.setText(f"{t.get('headcount', 1.0):.1f}")
             self.table.blockSignals(False)
@@ -999,7 +999,7 @@ class GanttApp(QMainWindow):
                     if not t.get('auto_start_date') and t.get('periods'):
                         t['auto_start_date'] = t['periods'][0].get('start_date', '')
                     if 'workload' not in t:
-                        t['workload'] = 10.0
+                        t['workload'] = 1.0 # 変更
                 self.recalculate_auto_tasks()
                 self.update_ui()
 
