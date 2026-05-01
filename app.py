@@ -605,6 +605,9 @@ class GanttApp(QMainWindow):
                 avail_res = daily_speed.get(d_str, 0.0)
                 active_tasks = [at for at in auto_tasks if at['start'] <= current_date and at['rem_work'] > 0]
                 
+                for at in active_tasks:
+                    at['daily_assigned'] = 0.0
+                
                 if active_tasks and avail_res > 0.001:
                     unallocated_res = avail_res
                     tasks_to_allocate = active_tasks.copy()
@@ -612,17 +615,35 @@ class GanttApp(QMainWindow):
                     while tasks_to_allocate and unallocated_res > 0.001:
                         alloc_per_task = unallocated_res / len(tasks_to_allocate)
                         next_tasks = []
+                        allocated_anything = False
+                        
                         for at in tasks_to_allocate:
-                            if at['rem_work'] <= alloc_per_task:
-                                unallocated_res -= at['rem_work']
+                            cap = at['task'].get('headcount', 0.0)
+                            max_receivable = at['rem_work']
+                            if cap > 0.001:
+                                max_receivable = min(max_receivable, cap - at['daily_assigned'])
+                            
+                            if max_receivable < 0.001:
+                                continue
+                                
+                            amount_to_give = min(alloc_per_task, max_receivable)
+                            
+                            if amount_to_give > 0.0001:
+                                allocated_anything = True
+                                at['rem_work'] -= amount_to_give
+                                unallocated_res -= amount_to_give
+                                at['daily_assigned'] += amount_to_give
+                                at['last_progress'] = current_date
+                            
+                            if at['rem_work'] <= 0.001:
                                 at['rem_work'] = 0.0
                                 at['end'] = current_date
-                                at['last_progress'] = current_date
                             else:
-                                at['rem_work'] -= alloc_per_task
-                                unallocated_res -= alloc_per_task
-                                at['last_progress'] = current_date
-                                next_tasks.append(at)
+                                if cap <= 0.001 or at['daily_assigned'] + 0.001 < cap:
+                                    next_tasks.append(at)
+                        
+                        if not allocated_anything:
+                            break
                         tasks_to_allocate = next_tasks
                 
                 current_date += timedelta(days=1)
@@ -954,7 +975,21 @@ class GanttApp(QMainWindow):
             t['name'] = item.text().strip()
         elif col == 4:
             if t.get('mode') == 'auto':
-                pass # 自動タスクの場合、人数/工数列は無視する
+                try:
+                    val = item.text().strip()
+                    if val == "":
+                        t['headcount'] = 0.0
+                    else:
+                        val = float(val)
+                        t['headcount'] = max(0.0, val)
+                except ValueError:
+                    pass
+                
+                self.table.blockSignals(True)
+                hc = t.get('headcount', 0.0)
+                item.setText(f"{hc:.1f}" if hc > 0 else "")
+                self.table.blockSignals(False)
+                self.recalculate_auto_tasks()
             else:
                 try:
                     val = float(item.text().strip())

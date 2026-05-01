@@ -291,8 +291,9 @@ class ChartRenderer:
                 item_mode.setTextAlignment(Qt.AlignCenter)
                 
                 if is_auto:
-                    item_hc.setText("")
-                    item_hc.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+                    hc = t.get('headcount', 0.0)
+                    item_hc.setText(f"{hc:.1f}" if hc > 0 else "")
+                    item_hc.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
                     item_period.setText(t.get('auto_start_date', ''))
                 else:
                     item_hc.setText(f"{t.get('headcount', 1.0):.1f}")
