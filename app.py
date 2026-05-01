@@ -570,7 +570,8 @@ class GanttApp(QMainWindow):
                         'task': t,
                         'start': start_date,
                         'rem_work': float(t.get('workload', 10.0)),
-                        'end': None
+                        'end': None,
+                        'last_progress': None
                     })
                     
             if not auto_tasks:
@@ -586,11 +587,19 @@ class GanttApp(QMainWindow):
                 for at in auto_tasks:
                     t = at['task']
                     sd_str = at['start'].strftime("%Y-%m-%d")
-                    t['periods'] = [{"start_date": sd_str, "end_date": sd_str, "color": t.get('color'), "text": ""}]
+                    t['periods'] = [{"start_date": sd_str, "end_date": sd_str, "color": "#d13438", "text": "⚠️ 進行不可"}]
                 continue
+                
+            # これ以降キャパシティが発生しない日を特定
+            max_speed_date_str = max(daily_speed.keys())
+            max_speed_date = datetime.strptime(max_speed_date_str, "%Y-%m-%d")
             
             # 生成タスクの開始日から設定した工数(rem_work)を引いていき、工数分のバーを作成する
             while any(at['rem_work'] > 0 for at in auto_tasks) and days_simulated < max_days:
+                # 終了条件：全てキャパシティが無い未来に入ったら打ち切り
+                if current_date > max_speed_date:
+                    break
+                    
                 d_str = current_date.strftime("%Y-%m-%d")
                 
                 avail_res = daily_speed.get(d_str, 0.0)
@@ -608,9 +617,11 @@ class GanttApp(QMainWindow):
                                 unallocated_res -= at['rem_work']
                                 at['rem_work'] = 0.0
                                 at['end'] = current_date
+                                at['last_progress'] = current_date
                             else:
                                 at['rem_work'] -= alloc_per_task
                                 unallocated_res -= alloc_per_task
+                                at['last_progress'] = current_date
                                 next_tasks.append(at)
                         tasks_to_allocate = next_tasks
                 
@@ -620,13 +631,29 @@ class GanttApp(QMainWindow):
             for at in auto_tasks:
                 t = at['task']
                 sd_str = at['start'].strftime("%Y-%m-%d")
-                ed_str = at['end'].strftime("%Y-%m-%d") if at['end'] else sd_str
                 
-                p_color = t.get('color')
-                p_text = ""
-                if t.get('periods') and len(t['periods']) > 0:
-                    p_color = t['periods'][0].get('color', p_color)
-                    p_text = t['periods'][0].get('text', "")
+                if at['rem_work'] > 0:
+                    # 消化しきれなかった場合
+                    if at['last_progress']:
+                        ed_str = at['last_progress'].strftime("%Y-%m-%d")
+                    else:
+                        ed_str = sd_str
+                    p_color = "#d13438" # 赤色
+                    p_text = "⚠️ キャパオーバー"
+                else:
+                    ed_str = at['end'].strftime("%Y-%m-%d") if at['end'] else sd_str
+                    p_color = t.get('color')
+                    p_text = ""
+                    if t.get('periods') and len(t['periods']) > 0:
+                        prev_color = t['periods'][0].get('color', p_color)
+                        prev_text = t['periods'][0].get('text', "")
+                        # 以前のエラー表示を引き継がず、正常状態にリセットする
+                        if prev_text in ["⚠️ キャパオーバー", "⚠️ 進行不可"]:
+                            p_color = t.get('color')
+                            p_text = ""
+                        else:
+                            p_color = prev_color
+                            p_text = prev_text
                 
                 t['periods'] = [{"start_date": sd_str, "end_date": ed_str, "color": p_color, "text": p_text}]
 
@@ -789,25 +816,19 @@ class GanttApp(QMainWindow):
                 continue
                 
             t_color = task.get('color', '#0078d4')
-            hc = float(task.get('headcount', 1.0))
-            
+            hc = task.get('headcount', 1.0)
+                
             for p in task.get('periods', []):
                 if not p.get('start_date') or not p.get('end_date'): continue
                 try:
                     psd = datetime.strptime(p['start_date'], "%Y-%m-%d")
                     ped = datetime.strptime(p['end_date'], "%Y-%m-%d")
-                    
-                    calc_start = max(psd, timeline_start)
-                    calc_end = min(ped, timeline_end)
-                    
-                    if calc_start <= calc_end:
-                        overlap = (calc_end - calc_start).days + 1
-                        if overlap > 0:
-                            p_color = p.get('color')
-                            if p_color and p_color.lower() != t_color.lower():
-                                continue
-                            # 休日を含めた全ての重なり日数を計上
-                            day_map[t_color] = day_map.get(t_color, 0.0) + (overlap * hc)
+                    overlap = (min(ped, timeline_end) - max(psd, timeline_start)).days + 1
+                    if overlap > 0:
+                        p_color = p.get('color')
+                        if p_color and p_color.lower() != t_color.lower():
+                            continue
+                        day_map[t_color] = day_map.get(t_color, 0) + (overlap * hc)
                 except ValueError:
                     continue
         return day_map
