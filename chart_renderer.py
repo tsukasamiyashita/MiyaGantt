@@ -304,7 +304,7 @@ class ChartRenderer:
                     item_period.setBackground(bg_auto)
 
                     hc = t.get('headcount', 0.0)
-                    item_hc.setText(f"{int(hc)}" if hc > 0 else "")
+                    item_hc.setText(f"{int(hc)}" if hc > 0 else "制限なし")
                     item_hc.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
                     item_period.setText(t.get('auto_start_date', ''))
                 else:
