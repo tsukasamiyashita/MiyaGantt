@@ -1002,8 +1002,8 @@ class GanttApp(QMainWindow):
             if t.get('is_group'): return
             new_mode_ja = item.text().strip()
             new_mode_en = 'manual'
-            if new_mode_ja == '案件': new_mode_en = 'auto'
-            elif new_mode_ja == 'メモ': new_mode_en = 'memo'
+            if '案件' in new_mode_ja: new_mode_en = 'auto'
+            elif 'メモ' in new_mode_ja: new_mode_en = 'memo'
             
             if t.get('mode') != new_mode_en:
                 t['mode'] = new_mode_en

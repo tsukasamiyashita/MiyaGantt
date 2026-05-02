@@ -265,7 +265,6 @@ class ChartRenderer:
                 item_name.setBackground(QColor(242, 242, 242))
                 
                 item_mode.setText("")
-                item_mode.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                 item_mode.setBackground(QColor(242, 242, 242))
                 
                 item_hc.setText(f"{int(t.get('headcount', 1.0))}")
@@ -282,38 +281,33 @@ class ChartRenderer:
                 is_auto = t.get('mode') == 'auto'
                 is_memo = t.get('mode') == 'memo'
                 
-                if is_auto:
-                    item_mode.setText("案件")
-                elif is_memo:
-                    item_mode.setText("メモ")
-                else:
-                    item_mode.setText("人員")
-                item_mode.setTextAlignment(Qt.AlignCenter)
+                f_m = item_mode.font()
+                f_m.setBold(True)
+                item_mode.setFont(f_m)
                 
                 if is_auto:
-                    item_mode.setForeground(QColor(0, 120, 212))
-                    f_m = item_mode.font()
-                    f_m.setBold(True)
-                    item_mode.setFont(f_m)
+                    item_mode.setText("⚡ 案件")
+                    item_mode.setForeground(QColor(255, 255, 255))
+                    item_mode.setBackground(QColor(0, 120, 212))
                     
-                    bg_auto = QColor(245, 250, 255)
-                    item_name.setBackground(bg_auto)
-                    item_mode.setBackground(bg_auto)
-                    item_hc.setBackground(bg_auto)
-                    item_period.setBackground(bg_auto)
+                    bg_row = QColor(245, 250, 255)
+                    item_name.setBackground(bg_row)
+                    item_hc.setBackground(bg_row)
+                    item_period.setBackground(bg_row)
 
                     hc = t.get('headcount', 0.0)
                     item_hc.setText(f"{int(hc)}" if hc > 0 else "制限なし")
                     item_hc.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
                     item_period.setText(t.get('auto_start_date', ''))
                 elif is_memo:
-                    item_mode.setForeground(QColor(100, 100, 100))
+                    item_mode.setText("📝 メモ")
+                    item_mode.setForeground(QColor(255, 255, 255))
+                    item_mode.setBackground(QColor(150, 150, 150))
                     
-                    bg_memo = QColor(252, 252, 252)
-                    item_name.setBackground(bg_memo)
-                    item_mode.setBackground(bg_memo)
-                    item_hc.setBackground(bg_memo)
-                    item_period.setBackground(bg_memo)
+                    bg_row = QColor(250, 250, 250)
+                    item_name.setBackground(bg_row)
+                    item_hc.setBackground(bg_row)
+                    item_period.setBackground(bg_row)
 
                     item_hc.setText("-")
                     item_hc.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
@@ -327,6 +321,15 @@ class ChartRenderer:
                         p_strs.append(f"{s}-{e}")
                     item_period.setText(", ".join(p_strs))
                 else:
+                    item_mode.setText("👤 人員")
+                    item_mode.setForeground(QColor(255, 255, 255))
+                    item_mode.setBackground(QColor(46, 139, 87))
+                    
+                    bg_row = QColor(255, 255, 255)
+                    item_name.setBackground(bg_row)
+                    item_hc.setBackground(bg_row)
+                    item_period.setBackground(bg_row)
+
                     item_hc.setText(f"{int(t.get('headcount', 1.0))}")
                     periods = t.get('periods', [])
                     p_strs = []
@@ -337,6 +340,7 @@ class ChartRenderer:
                         p_strs.append(f"{s}-{e}")
                     item_period.setText(", ".join(p_strs))
                     
+                item_mode.setTextAlignment(Qt.AlignCenter)
                 item_hc.setTextAlignment(Qt.AlignCenter)
                 
                 item_color.setText("")
@@ -367,7 +371,7 @@ class ChartRenderer:
                     if is_auto:
                         item_s.setBackground(QColor(245, 250, 255))
                     elif is_memo:
-                        item_s.setBackground(QColor(252, 252, 252))
+                        item_s.setBackground(QColor(250, 250, 250))
                     else:
                         item_s.setBackground(QColor(255, 255, 255))
                 

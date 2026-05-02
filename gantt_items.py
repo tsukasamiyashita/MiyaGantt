@@ -57,7 +57,7 @@ class GanttBarItem(QGraphicsRectItem):
 
         start_d = p_dict.get('start_date', '')
         end_d = p_dict.get('end_date', '')
-        mode_str = "案件モード" if self.task.get('mode') == 'auto' else "メモモード" if self.task.get('mode') == 'memo' else "人員モード"
+        mode_str = "⚡ 案件モード" if self.task.get('mode') == 'auto' else "📝 メモモード" if self.task.get('mode') == 'memo' else "👤 人員モード"
         self.setToolTip(f"タスク: {self.task.get('name','')}\nモード: {mode_str}\n期間: {start_d}〜{end_d}")
 
     def paint(self, painter, option, widget=None):

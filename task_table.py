@@ -50,7 +50,7 @@ class HeadcountDelegate(QStyledItemDelegate):
 class ModeDelegate(QStyledItemDelegate):
     def createEditor(self, parent, option, index):
         editor = QComboBox(parent)
-        editor.addItems(["人員", "案件", "メモ"])
+        editor.addItems(["👤 人員", "⚡ 案件", "📝 メモ"])
         editor.currentIndexChanged.connect(self.commitAndCloseEditor)
         QTimer.singleShot(0, editor.showPopup)
         return editor
@@ -67,7 +67,9 @@ class ModeDelegate(QStyledItemDelegate):
         if idx >= 0:
             editor.setCurrentIndex(idx)
         else:
-            editor.setCurrentIndex(0)
+            if text and '案件' in text: editor.setCurrentIndex(1)
+            elif text and 'メモ' in text: editor.setCurrentIndex(2)
+            else: editor.setCurrentIndex(0)
 
     def setModelData(self, editor, model, index):
         if editor is None: return
