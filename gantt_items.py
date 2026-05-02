@@ -94,7 +94,7 @@ class GanttBarItem(QGraphicsRectItem):
 
         start_d = p_dict.get('start_date', '')
         end_d = p_dict.get('end_date', '')
-        mode_str = "案件モード" if self.task.get('mode') == 'auto' else "人員モード"
+        mode_str = "案件モード" if self.task.get('mode') == 'auto' else "メモモード" if self.task.get('mode') == 'memo' else "人員モード"
         self.setToolTip(f"タスク: {self.task.get('name','')}\nモード: {mode_str}\n期間: {start_d}〜{end_d}")
 
     def paint(self, painter, option, widget=None):
@@ -524,7 +524,11 @@ class ChartScene(QGraphicsScene):
                     task['periods'].append({"start_date": d_str, "end_date": d_str})
                 self.app.update_ui()
             elif action == add_task_in_group and add_task_in_group:
-                mode = "auto" if self.app.mode_combo.currentIndex() == 1 else "manual"
+                mode_idx = self.app.mode_combo.currentIndex()
+                if mode_idx == 0: mode = "manual"
+                elif mode_idx == 1: mode = "auto"
+                else: mode = "memo"
+
                 new_task = {
                     "name": "新規タスク",
                     "mode": mode,
@@ -536,9 +540,13 @@ class ChartScene(QGraphicsScene):
                     new_task["workload"] = 1.0 
                     new_task["periods"] = [{"start_date": d_str, "end_date": d_str}]
                     new_task["headcount"] = 0.0
+                elif mode == "memo":
+                    new_task["periods"] = [{"start_date": d_str, "end_date": d_str}]
+                    new_task["headcount"] = 0.0
                 else:
                     new_task["periods"] = [{"start_date": d_str, "end_date": d_str}]
                     new_task["headcount"] = 1.0
+                    
                 self.app.tasks.insert(info['index'] + 1, new_task)
                 self.app.recalculate_auto_tasks()
                 self.app.update_ui()

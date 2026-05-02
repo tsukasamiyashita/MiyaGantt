@@ -4,9 +4,12 @@ from PySide6.QtCore import Qt, QTimer
 
 class HeadcountDelegate(QStyledItemDelegate):
     def createEditor(self, parent, option, index):
-        editor = QComboBox(parent)
         mode_text = index.model().data(index.siblingAtColumn(3), Qt.DisplayRole)
         
+        if mode_text == "メモ":
+            return None
+
+        editor = QComboBox(parent)
         if mode_text == "案件":
             editor.addItem("制限なし")
             
@@ -23,6 +26,7 @@ class HeadcountDelegate(QStyledItemDelegate):
         self.closeEditor.emit(editor, QStyledItemDelegate.NoHint)
 
     def setEditorData(self, editor, index):
+        if editor is None: return
         text = index.model().data(index, Qt.EditRole)
         
         val_str = str(text).replace('.0', '') if text else ""
@@ -36,6 +40,7 @@ class HeadcountDelegate(QStyledItemDelegate):
             editor.setCurrentIndex(0)
 
     def setModelData(self, editor, model, index):
+        if editor is None: return
         val = editor.currentText()
         if val == "制限なし":
             model.setData(index, "", Qt.EditRole)

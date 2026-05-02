@@ -87,7 +87,7 @@ class GanttApp(QMainWindow):
         
         tl.addWidget(QLabel(" ｜ デフォルト設定:"))
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems(["人員モード (手動)", "案件モード (自動)"])
+        self.mode_combo.addItems(["人員モード (手動)", "案件モード (自動)", "メモモード"])
         tl.addWidget(self.mode_combo)
         
         tl.addStretch()
@@ -539,7 +539,6 @@ class GanttApp(QMainWindow):
             groups_to_process.append((temp_group, temp_tasks))
             
         for g, tasks in groups_to_process:
-            # グループ内の各日における人員タスクの合計工数を計算（これが案件タスクの進行スピードになる）
             daily_speed = {}
             for t in tasks:
                 if t.get('mode', 'manual') == 'manual':
@@ -557,7 +556,7 @@ class GanttApp(QMainWindow):
             
             auto_tasks = []
             for t in tasks:
-                if t.get('mode', 'manual') != 'manual':
+                if t.get('mode') == 'auto':
                     sd_str = t.get('auto_start_date')
                     if not sd_str:
                         sd_str = self.min_date.strftime("%Y-%m-%d")
@@ -583,7 +582,6 @@ class GanttApp(QMainWindow):
             max_days = 3650
             days_simulated = 0
             
-            # 人員タスクが1つも存在しない場合は進行できない
             has_speed = any(s > 0 for s in daily_speed.values())
             if not has_speed:
                 for at in auto_tasks:
@@ -592,13 +590,10 @@ class GanttApp(QMainWindow):
                     t['periods'] = [{"start_date": sd_str, "end_date": sd_str, "color": "#d13438", "text": "⚠️ 進行不可"}]
                 continue
                 
-            # これ以降キャパシティが発生しない日を特定
             max_speed_date_str = max(daily_speed.keys())
             max_speed_date = datetime.strptime(max_speed_date_str, "%Y-%m-%d")
             
-            # 案件タスクの開始日から設定した工数(rem_work)を引いていき、工数分のバーを作成する
             while any(at['rem_work'] > 0 for at in auto_tasks) and days_simulated < max_days:
-                # 終了条件：全てキャパシティが無い未来に入ったら打ち切り
                 if current_date > max_speed_date:
                     break
                     
@@ -657,12 +652,11 @@ class GanttApp(QMainWindow):
                 sd_str = at['start'].strftime("%Y-%m-%d")
                 
                 if at['rem_work'] > 0:
-                    # 消化しきれなかった場合
                     if at['last_progress']:
                         ed_str = at['last_progress'].strftime("%Y-%m-%d")
                     else:
                         ed_str = sd_str
-                    p_color = "#d13438" # 赤色
+                    p_color = "#d13438"
                     p_text = "⚠️ キャパオーバー"
                 else:
                     ed_str = at['end'].strftime("%Y-%m-%d") if at['end'] else sd_str
@@ -671,7 +665,6 @@ class GanttApp(QMainWindow):
                     if t.get('periods') and len(t['periods']) > 0:
                         prev_color = t['periods'][0].get('color', p_color)
                         prev_text = t['periods'][0].get('text', "")
-                        # 以前のエラー表示を引き継がず、正常状態にリセットする
                         if prev_text in ["⚠️ キャパオーバー", "⚠️ 進行不可"]:
                             p_color = t.get('color')
                             p_text = ""
@@ -683,17 +676,25 @@ class GanttApp(QMainWindow):
                 t['daily_allocations'] = at.get('daily_allocations', {})
 
     def add_task(self):
-        mode = "auto" if self.mode_combo.currentIndex() == 1 else "manual"
+        mode_idx = self.mode_combo.currentIndex()
+        if mode_idx == 0: mode = "manual"
+        elif mode_idx == 1: mode = "auto"
+        else: mode = "memo"
+        
         t = {
             "name": f"新規タスク {len(self.tasks)+1}",
             "mode": mode,
             "progress": 0,
             "color": "#0078d4"
         }
+        
         if mode == "auto":
             t["auto_start_date"] = self.min_date.strftime("%Y-%m-%d")
             t["workload"] = 1.0 
             t["periods"] = [{"start_date": t["auto_start_date"], "end_date": t["auto_start_date"]}]
+            t["headcount"] = 0.0
+        elif mode == "memo":
+            t["periods"] = []
             t["headcount"] = 0.0
         else:
             t["periods"] = []
@@ -830,10 +831,14 @@ class GanttApp(QMainWindow):
                     self.table.setItem(r, col_idx, item_s)
                 
                 is_auto = not t.get('is_group') and t.get('mode') == 'auto'
+                is_memo = not t.get('is_group') and t.get('mode') == 'memo'
                 
                 if is_auto:
                     item_s.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
                     item_s.setText(f"{t.get('workload', 1.0):.1f}工数")
+                elif is_memo:
+                    item_s.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+                    item_s.setText("-")
                 else:
                     item_s.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                     day_map = self.get_task_workload_in_range(t, info['index'], h_start, h_end)
@@ -844,7 +849,12 @@ class GanttApp(QMainWindow):
                 if t.get('is_group'):
                     item_s.setBackground(QColor(242, 242, 242))
                 else:
-                    item_s.setBackground(QColor(255, 255, 255))
+                    if is_auto:
+                        item_s.setBackground(QColor(245, 250, 255))
+                    elif is_memo:
+                        item_s.setBackground(QColor(252, 252, 252))
+                    else:
+                        item_s.setBackground(QColor(255, 255, 255))
                 
                 if self.summary_visible:
                     self.table.setColumnWidth(col_idx, 90)
@@ -865,7 +875,7 @@ class GanttApp(QMainWindow):
                 tasks_to_sum.append(self.tasks[i])
         
         for task in tasks_to_sum:
-            if task.get('mode') == 'auto':
+            if task.get('mode') in ['auto', 'memo']:
                 continue
                 
             t_color = task.get('color', '#0078d4')
@@ -919,9 +929,14 @@ class GanttApp(QMainWindow):
                 item_s = self.table.item(r, col_idx)
                 if item_s:
                     is_auto = not t.get('is_group') and t.get('mode') == 'auto'
+                    is_memo = not t.get('is_group') and t.get('mode') == 'memo'
+                    
                     if is_auto:
                         item_s.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
                         item_s.setText(f"{t.get('workload', 1.0):.1f}工数")
+                    elif is_memo:
+                        item_s.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+                        item_s.setText("-")
                     else:
                         item_s.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                         day_map = self.get_task_workload_in_range(t, info['index'], h_start, h_end)
@@ -937,7 +952,10 @@ class GanttApp(QMainWindow):
         ed = self.min_date + timedelta(days=ex/self.day_width - 0.001)
         row = max(0, int(y / self.row_height))
         
-        mode = "auto" if self.mode_combo.currentIndex() == 1 else "manual"
+        mode_idx = self.mode_combo.currentIndex()
+        if mode_idx == 0: mode = "manual"
+        elif mode_idx == 1: mode = "auto"
+        else: mode = "memo"
         
         t = {
             "name": f"新規 {len(self.tasks)+1}", 
@@ -950,6 +968,9 @@ class GanttApp(QMainWindow):
             t["auto_start_date"] = sd.strftime("%Y-%m-%d")
             t["workload"] = 1.0 
             t["periods"] = [{"start_date": sd.strftime("%Y-%m-%d"), "end_date": sd.strftime("%Y-%m-%d")}]
+            t["headcount"] = 0.0
+        elif mode == "memo":
+            t["periods"] = [{"start_date": sd.strftime("%Y-%m-%d"), "end_date": ed.strftime("%Y-%m-%d")}]
             t["headcount"] = 0.0
         else:
             t["periods"] = [{"start_date": sd.strftime("%Y-%m-%d"), "end_date": ed.strftime("%Y-%m-%d")}]
@@ -995,6 +1016,10 @@ class GanttApp(QMainWindow):
                 item.setText(f"{int(hc)}" if hc > 0 else "制限なし")
                 self.table.blockSignals(False)
                 self.recalculate_auto_tasks()
+            elif t.get('mode') == 'memo':
+                self.table.blockSignals(True)
+                item.setText("-")
+                self.table.blockSignals(False)
             else:
                 try:
                     val = item.text().strip()
@@ -1070,14 +1095,23 @@ class GanttApp(QMainWindow):
         elif col == 3:
             if not t.get('is_group'):
                 current_mode = t.get('mode', 'manual')
-                t['mode'] = 'auto' if current_mode == 'manual' else 'manual'
-                if t['mode'] == 'auto':
+                if current_mode == 'manual':
+                    t['mode'] = 'auto'
                     if not t.get('auto_start_date') and t.get('periods'):
                         t['auto_start_date'] = t['periods'][0].get('start_date', '')
                     if 'workload' not in t:
                         t['workload'] = 1.0 
                     t['headcount'] = 0.0
+                elif current_mode == 'auto':
+                    t['mode'] = 'memo'
+                    t['headcount'] = 0.0
+                    if t.get('periods'):
+                        for p in t['periods']:
+                            if p.get('text') in ["⚠️ キャパオーバー", "⚠️ 進行不可"]:
+                                p['text'] = ""
+                                p['color'] = t.get('color', '#0078d4')
                 else:
+                    t['mode'] = 'manual'
                     if t.get('headcount', 0.0) == 0.0:
                         t['headcount'] = 1.0
                     if t.get('periods'):

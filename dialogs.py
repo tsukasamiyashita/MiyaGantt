@@ -179,7 +179,7 @@ class SummaryDialog(QDialog):
             for c, (h_start, h_end, label) in enumerate(headers):
                 color_map = {}
                 for t in g['tasks']:
-                    if t.get('mode') == 'auto':
+                    if t.get('mode') in ['auto', 'memo']:
                         continue
                     t_color = t.get('color', '#0078d4')
                     hc = float(t.get('headcount', 1.0))

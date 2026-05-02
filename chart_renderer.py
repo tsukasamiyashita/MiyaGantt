@@ -122,7 +122,7 @@ class ChartRenderer:
                     for i in range(info['index'] + 1, len(self.app.tasks)):
                         sub_t = self.app.tasks[i]
                         if sub_t.get('is_group'): break
-                        if sub_t.get('mode') == 'auto':
+                        if sub_t.get('mode') in ['auto', 'memo']:
                             continue
                         sub_periods = sub_t.get('periods', [])
                         t_color = sub_t.get('color', '#0078d4')
@@ -287,7 +287,14 @@ class ChartRenderer:
                 item_color.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
             else:
                 is_auto = t.get('mode') == 'auto'
-                item_mode.setText("案件" if is_auto else "人員")
+                is_memo = t.get('mode') == 'memo'
+                
+                if is_auto:
+                    item_mode.setText("案件")
+                elif is_memo:
+                    item_mode.setText("メモ")
+                else:
+                    item_mode.setText("人員")
                 item_mode.setTextAlignment(Qt.AlignCenter)
                 
                 if is_auto:
@@ -307,6 +314,27 @@ class ChartRenderer:
                     item_hc.setText(f"{int(hc)}" if hc > 0 else "制限なし")
                     item_hc.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
                     item_period.setText(t.get('auto_start_date', ''))
+                elif is_memo:
+                    item_mode.setForeground(QColor(100, 100, 100))
+                    
+                    bg_memo = QColor(252, 252, 252)
+                    item_name.setBackground(bg_memo)
+                    item_mode.setBackground(bg_memo)
+                    item_hc.setBackground(bg_memo)
+                    item_prog.setBackground(bg_memo)
+                    item_period.setBackground(bg_memo)
+
+                    item_hc.setText("-")
+                    item_hc.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+                    
+                    periods = t.get('periods', [])
+                    p_strs = []
+                    for p in periods:
+                        if not p.get('start_date') or not p.get('end_date'): continue
+                        s = p['start_date'].replace('-', '/')
+                        e = p['end_date'].replace('-', '/')
+                        p_strs.append(f"{s}-{e}")
+                    item_period.setText(", ".join(p_strs))
                 else:
                     item_hc.setText(f"{int(t.get('headcount', 1.0))}")
                     periods = t.get('periods', [])
@@ -333,6 +361,9 @@ class ChartRenderer:
                 if not is_group and is_auto:
                     item_s.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
                     item_s.setText(f"{t.get('workload', 1.0):.1f}工数")
+                elif not is_group and is_memo:
+                    item_s.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+                    item_s.setText("-")
                 else:
                     item_s.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                     day_map = self.app.get_task_workload_in_range(t, info['index'], h_start, h_end)
@@ -344,7 +375,12 @@ class ChartRenderer:
                 if is_group:
                     item_s.setBackground(QColor(242, 242, 242))
                 else:
-                    item_s.setBackground(QColor(245, 250, 255) if is_auto else QColor(255, 255, 255))
+                    if is_auto:
+                        item_s.setBackground(QColor(245, 250, 255))
+                    elif is_memo:
+                        item_s.setBackground(QColor(252, 252, 252))
+                    else:
+                        item_s.setBackground(QColor(255, 255, 255))
                 
         if self.app.table.rowCount() > new_rows:
             self.app.table.setRowCount(new_rows)
