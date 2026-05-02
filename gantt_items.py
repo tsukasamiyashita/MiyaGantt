@@ -490,6 +490,7 @@ class ChartScene(QGraphicsScene):
                     new_task["auto_start_date"] = d_str
                     new_task["workload"] = 1.0 # デフォルト値を変更
                     new_task["periods"] = [{"start_date": d_str, "end_date": d_str}]
+                    new_task["headcount"] = 0.0
                 else:
                     new_task["periods"] = [{"start_date": d_str, "end_date": d_str}]
                     new_task["headcount"] = 1.0

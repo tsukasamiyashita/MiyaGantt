@@ -1,26 +1,39 @@
 # tsukasamiyashita/miyagantt/MiyaGantt-46a1664b6d1737cb32f1dd17429ce06cca8dc678/task_table.py
 from PySide6.QtWidgets import QHeaderView, QTableWidget, QMenu, QStyledItemDelegate, QComboBox
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 
 class HeadcountDelegate(QStyledItemDelegate):
     def createEditor(self, parent, option, index):
         editor = QComboBox(parent)
-        editor.addItem("制限なし")
+        mode_text = index.model().data(index.siblingAtColumn(3), Qt.DisplayRole)
+        
+        if mode_text == "生成":
+            editor.addItem("制限なし")
+            
         for i in range(1, 21):
             editor.addItem(str(i))
+            
+        editor.currentIndexChanged.connect(self.commitAndCloseEditor)
+        QTimer.singleShot(0, editor.showPopup)
         return editor
+
+    def commitAndCloseEditor(self):
+        editor = self.sender()
+        self.commitData.emit(editor)
+        self.closeEditor.emit(editor, QStyledItemDelegate.NoHint)
 
     def setEditorData(self, editor, index):
         text = index.model().data(index, Qt.EditRole)
-        if not text or text == "制限なし":
-            editor.setCurrentIndex(0)
+        
+        val_str = str(text).replace('.0', '') if text else ""
+        if not val_str or val_str == "制限なし" or val_str == "None":
+            val_str = "制限なし"
+            
+        idx = editor.findText(val_str)
+        if idx >= 0:
+            editor.setCurrentIndex(idx)
         else:
-            val_str = str(text).replace('.0', '')
-            idx = editor.findText(val_str)
-            if idx >= 0:
-                editor.setCurrentIndex(idx)
-            else:
-                editor.setCurrentIndex(0)
+            editor.setCurrentIndex(0)
 
     def setModelData(self, editor, model, index):
         val = editor.currentText()

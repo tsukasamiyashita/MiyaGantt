@@ -691,6 +691,7 @@ class GanttApp(QMainWindow):
             t["auto_start_date"] = self.min_date.strftime("%Y-%m-%d")
             t["workload"] = 1.0 # デフォルト値を変更
             t["periods"] = [{"start_date": t["auto_start_date"], "end_date": t["auto_start_date"]}]
+            t["headcount"] = 0.0
         else:
             t["periods"] = []
             t["headcount"] = 1.0
@@ -946,6 +947,7 @@ class GanttApp(QMainWindow):
             t["auto_start_date"] = sd.strftime("%Y-%m-%d")
             t["workload"] = 1.0 # デフォルト値を変更
             t["periods"] = [{"start_date": sd.strftime("%Y-%m-%d"), "end_date": sd.strftime("%Y-%m-%d")}]
+            t["headcount"] = 0.0
         else:
             t["periods"] = [{"start_date": sd.strftime("%Y-%m-%d"), "end_date": ed.strftime("%Y-%m-%d")}]
             t["headcount"] = 1.0
@@ -1071,7 +1073,10 @@ class GanttApp(QMainWindow):
                         t['auto_start_date'] = t['periods'][0].get('start_date', '')
                     if 'workload' not in t:
                         t['workload'] = 1.0 # 変更
+                    t['headcount'] = 0.0
                 else:
+                    if t.get('headcount', 0.0) == 0.0:
+                        t['headcount'] = 1.0
                     if t.get('periods'):
                         for p in t['periods']:
                             if p.get('text') in ["⚠️ キャパオーバー", "⚠️ 進行不可"]:
