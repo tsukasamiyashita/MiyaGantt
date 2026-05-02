@@ -320,7 +320,7 @@ class ChartRenderer:
                 
                 if not is_group and is_auto:
                     item_s.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
-                    item_s.setText(f"{t.get('workload', 1.0):.1f}")
+                    item_s.setText(f"{t.get('workload', 1.0):.1f}工数")
                 else:
                     item_s.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                     day_map = self.app.get_task_workload_in_range(t, info['index'], h_start, h_end)

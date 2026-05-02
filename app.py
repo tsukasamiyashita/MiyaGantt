@@ -830,7 +830,7 @@ class GanttApp(QMainWindow):
                 
                 if is_auto:
                     item_s.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
-                    item_s.setText(f"{t.get('workload', 1.0):.1f}")
+                    item_s.setText(f"{t.get('workload', 1.0):.1f}工数")
                 else:
                     item_s.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                     day_map = self.get_task_workload_in_range(t, info['index'], h_start, h_end)
@@ -918,7 +918,7 @@ class GanttApp(QMainWindow):
                     is_auto = not t.get('is_group') and t.get('mode') == 'auto'
                     if is_auto:
                         item_s.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
-                        item_s.setText(f"{t.get('workload', 1.0):.1f}")
+                        item_s.setText(f"{t.get('workload', 1.0):.1f}工数")
                     else:
                         item_s.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                         day_map = self.get_task_workload_in_range(t, info['index'], h_start, h_end)
@@ -1035,7 +1035,7 @@ class GanttApp(QMainWindow):
         elif col >= 8:
             if not t.get('is_group') and t.get('mode') == 'auto':
                 try:
-                    val = float(item.text().strip())
+                    val = float(item.text().replace('工数', '').strip())
                     t['workload'] = max(0.1, val)
                 except ValueError:
                     pass
