@@ -291,6 +291,18 @@ class ChartRenderer:
                 item_mode.setTextAlignment(Qt.AlignCenter)
                 
                 if is_auto:
+                    item_mode.setForeground(QColor(0, 120, 212))
+                    f_m = item_mode.font()
+                    f_m.setBold(True)
+                    item_mode.setFont(f_m)
+                    
+                    bg_auto = QColor(245, 250, 255)
+                    item_name.setBackground(bg_auto)
+                    item_mode.setBackground(bg_auto)
+                    item_hc.setBackground(bg_auto)
+                    item_prog.setBackground(bg_auto)
+                    item_period.setBackground(bg_auto)
+
                     hc = t.get('headcount', 0.0)
                     item_hc.setText(f"{int(hc)}" if hc > 0 else "")
                     item_hc.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
@@ -332,7 +344,7 @@ class ChartRenderer:
                 if is_group:
                     item_s.setBackground(QColor(242, 242, 242))
                 else:
-                    item_s.setBackground(QColor(255, 255, 255))
+                    item_s.setBackground(QColor(245, 250, 255) if is_auto else QColor(255, 255, 255))
                 
         if self.app.table.rowCount() > new_rows:
             self.app.table.setRowCount(new_rows)
