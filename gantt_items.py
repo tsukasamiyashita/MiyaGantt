@@ -18,13 +18,11 @@ class GanttBarItem(QGraphicsRectItem):
                       QGraphicsRectItem.ItemSendsGeometryChanges)
         self.setAcceptHoverEvents(True)
         
-        self.progress_item = QGraphicsRectItem(self)
         self.text_item = QGraphicsTextItem('', self)
         self.text_item.setDefaultTextColor(Qt.white)
         self.text_item.setZValue(1)
         font = QFont("Segoe UI", 9, QFont.Bold)
         self.text_item.setFont(font)
-        self.progress_item.setAcceptHoverEvents(False)
         self.text_item.setAcceptHoverEvents(False)
         
         self.resizing_left = False
@@ -45,42 +43,7 @@ class GanttBarItem(QGraphicsRectItem):
         bc = QColor(color_code)
         
         self.setPen(QPen(Qt.black if self.isSelected() else bc.darker(120), 2 if self.isSelected() else 1))
-        self.setBrush(QBrush(bc.lighter(150)))
-        
-        prog = self.task.get('progress', 0)
-        
-        periods = self.task.get('periods', [self.task])
-        valid_periods = []
-        for i, p in enumerate(periods):
-            try:
-                sd = datetime.strptime(p.get('start_date', ''), "%Y-%m-%d")
-                ed = datetime.strptime(p.get('end_date', ''), "%Y-%m-%d")
-                valid_periods.append({'idx': i, 'start': sd, 'end': ed, 'days': (ed - sd).days + 1})
-            except Exception:
-                pass
-                
-        valid_periods.sort(key=lambda x: x['start'])
-        total_days = sum(p['days'] for p in valid_periods)
-        
-        target_days = total_days * (prog / 100.0)
-        
-        days_allocated_to_this = 0
-        for p in valid_periods:
-            if target_days <= 0:
-                break
-            allocate = min(p['days'], target_days)
-            if p['idx'] == self.period_index:
-                days_allocated_to_this = allocate
-                break
-            target_days -= allocate
-            
-        this_period = next((p for p in valid_periods if p['idx'] == self.period_index), None)
-        local_prog_ratio = (days_allocated_to_this / this_period['days']) if (this_period and this_period['days'] > 0) else 0
-        
-        p_rect = QRectF(self.rect().left(), self.rect().top(), self.rect().width() * local_prog_ratio, self.rect().height())
-        self.progress_item.setRect(p_rect)
-        self.progress_item.setBrush(QBrush(bc))
-        self.progress_item.setPen(Qt.NoPen)
+        self.setBrush(QBrush(bc))
 
         periods = self.task.get('periods')
         if periods is not None and self.period_index < len(periods):
@@ -532,7 +495,6 @@ class ChartScene(QGraphicsScene):
                 new_task = {
                     "name": "新規タスク",
                     "mode": mode,
-                    "progress": 0,
                     "color": "#0078d4"
                 }
                 if mode == "auto":

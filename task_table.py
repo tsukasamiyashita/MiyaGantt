@@ -47,6 +47,33 @@ class HeadcountDelegate(QStyledItemDelegate):
         else:
             model.setData(index, val, Qt.EditRole)
 
+class ModeDelegate(QStyledItemDelegate):
+    def createEditor(self, parent, option, index):
+        editor = QComboBox(parent)
+        editor.addItems(["人員", "案件", "メモ"])
+        editor.currentIndexChanged.connect(self.commitAndCloseEditor)
+        QTimer.singleShot(0, editor.showPopup)
+        return editor
+
+    def commitAndCloseEditor(self):
+        editor = self.sender()
+        self.commitData.emit(editor)
+        self.closeEditor.emit(editor, QStyledItemDelegate.NoHint)
+
+    def setEditorData(self, editor, index):
+        if editor is None: return
+        text = index.model().data(index, Qt.EditRole)
+        idx = editor.findText(text)
+        if idx >= 0:
+            editor.setCurrentIndex(idx)
+        else:
+            editor.setCurrentIndex(0)
+
+    def setModelData(self, editor, model, index):
+        if editor is None: return
+        val = editor.currentText()
+        model.setData(index, val, Qt.EditRole)
+
 class HideableHeader(QHeaderView):
     def __init__(self, orientation, parent=None):
         super().__init__(orientation, parent)
@@ -72,11 +99,11 @@ class TaskTable(QTableWidget):
 
     def show_header_menu(self, pos):
         menu = QMenu(self)
-        column_names = ["選択マーク", "開閉ボタン", "タスク名", "モード", "人数", "進捗(%)", "期間/開始日", "色", "集計"]
+        column_names = ["選択マーク", "開閉ボタン", "タスク名", "モード", "人数", "期間/開始日", "色", "集計"]
         for i, name in enumerate(column_names):
             action = menu.addAction(name)
             action.setCheckable(True)
-            if i < 8:
+            if i < 7:
                 action.setChecked(not self.isColumnHidden(i))
             else:
                 action.setChecked(self.window().summary_visible)

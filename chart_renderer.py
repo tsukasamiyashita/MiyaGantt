@@ -194,11 +194,11 @@ class ChartRenderer:
         threshold_date = self.app.get_threshold_date(visible_start)
         
         headers = self.app.get_summary_headers(threshold_date)
-        base_col_count = 8
+        base_col_count = 7
         total_cols = base_col_count + len(headers)
         self.app.table.setColumnCount(total_cols)
         
-        labels = ["", "", "タスク名", "モード", "人数", "進捗(%)", "期間/開始日", "色"] + [h[2] for h in headers]
+        labels = ["", "", "タスク名", "モード", "人数", "期間/開始日", "色"] + [h[2] for h in headers]
         self.app.table.setHorizontalHeaderLabels(labels)
         
         new_rows = len(self.app.visible_tasks_info)
@@ -241,7 +241,7 @@ class ChartRenderer:
             item_name.setText(indent + t.get('name', ''))
             
             item_mode = self.app.table.item(r, 3)
-            item_mode.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+            item_mode.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
             item_mode.setForeground(QColor(51, 51, 51))
             item_mode.setBackground(QColor(255, 255, 255))
             
@@ -250,17 +250,12 @@ class ChartRenderer:
             item_hc.setForeground(QColor(51, 51, 51))
             item_hc.setBackground(QColor(255, 255, 255))
             
-            item_prog = self.app.table.item(r, 5)
-            item_prog.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
-            item_prog.setForeground(QColor(51, 51, 51))
-            item_prog.setBackground(QColor(255, 255, 255))
-            
-            item_period = self.app.table.item(r, 6)
+            item_period = self.app.table.item(r, 5)
             item_period.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
             item_period.setForeground(QColor(51, 51, 51))
             item_period.setBackground(QColor(255, 255, 255))
             
-            item_color = self.app.table.item(r, 7)
+            item_color = self.app.table.item(r, 6)
             item_color.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
             item_color.setForeground(QColor(51, 51, 51))
             item_color.setBackground(QColor(255, 255, 255))
@@ -270,15 +265,13 @@ class ChartRenderer:
                 item_name.setBackground(QColor(242, 242, 242))
                 
                 item_mode.setText("")
+                item_mode.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                 item_mode.setBackground(QColor(242, 242, 242))
                 
                 item_hc.setText(f"{int(t.get('headcount', 1.0))}")
                 item_hc.setTextAlignment(Qt.AlignCenter)
                 item_hc.setBackground(QColor(242, 242, 242))
                 
-                item_prog.setText("")
-                item_prog.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
-                item_prog.setBackground(QColor(242, 242, 242))
                 item_period.setText("")
                 item_period.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                 item_period.setBackground(QColor(242, 242, 242))
@@ -307,7 +300,6 @@ class ChartRenderer:
                     item_name.setBackground(bg_auto)
                     item_mode.setBackground(bg_auto)
                     item_hc.setBackground(bg_auto)
-                    item_prog.setBackground(bg_auto)
                     item_period.setBackground(bg_auto)
 
                     hc = t.get('headcount', 0.0)
@@ -321,7 +313,6 @@ class ChartRenderer:
                     item_name.setBackground(bg_memo)
                     item_mode.setBackground(bg_memo)
                     item_hc.setBackground(bg_memo)
-                    item_prog.setBackground(bg_memo)
                     item_period.setBackground(bg_memo)
 
                     item_hc.setText("-")
@@ -347,15 +338,13 @@ class ChartRenderer:
                     item_period.setText(", ".join(p_strs))
                     
                 item_hc.setTextAlignment(Qt.AlignCenter)
-                item_prog.setText(str(t.get('progress', 0)))
-                item_prog.setTextAlignment(Qt.AlignCenter)
                 
                 item_color.setText("")
                 item_color.setBackground(QColor(t.get('color', '#0078d4')))
                 item_color.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
 
             for i, (h_start, h_end, _) in enumerate(headers):
-                col_idx = 8 + i
+                col_idx = 7 + i
                 item_s = self.app.table.item(r, col_idx)
                 
                 if not is_group and is_auto:
