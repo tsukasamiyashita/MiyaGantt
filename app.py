@@ -572,7 +572,8 @@ class GanttApp(QMainWindow):
                         'start': start_date,
                         'rem_work': float(t.get('workload', 1.0)), # ★初期値を1.0に変更した場合の影響は既存タスクにはないが念の為ここも合わせておく
                         'end': None,
-                        'last_progress': None
+                        'last_progress': None,
+                        'daily_allocations': {}
                     })
                     
             if not auto_tasks:
@@ -635,6 +636,7 @@ class GanttApp(QMainWindow):
                                 unallocated_res -= amount_to_give
                                 at['daily_assigned'] += amount_to_give
                                 at['last_progress'] = current_date
+                                at['daily_allocations'][d_str] = at['daily_allocations'].get(d_str, 0.0) + amount_to_give
                             
                             if at['rem_work'] <= 0.001:
                                 at['rem_work'] = 0.0
@@ -678,6 +680,7 @@ class GanttApp(QMainWindow):
                             p_text = prev_text
                 
                 t['periods'] = [{"start_date": sd_str, "end_date": ed_str, "color": p_color, "text": p_text}]
+                t['daily_allocations'] = at.get('daily_allocations', {})
 
     def add_task(self):
         mode = "auto" if self.mode_combo.currentIndex() == 1 else "manual"

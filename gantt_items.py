@@ -97,6 +97,49 @@ class GanttBarItem(QGraphicsRectItem):
         mode_str = "生成モード" if self.task.get('mode') == 'auto' else "作成モード"
         self.setToolTip(f"タスク: {self.task.get('name','')}\nモード: {mode_str}\n期間: {start_d}〜{end_d}")
 
+    def paint(self, painter, option, widget=None):
+        super().paint(painter, option, widget)
+        
+        if self.task.get('mode') == 'auto' and self.rect().width() > 0:
+            allocs = self.task.get('daily_allocations', {})
+            if not allocs:
+                return
+            
+            p_dict = self.period_dict
+            try:
+                sd = datetime.strptime(p_dict.get('start_date', ''), "%Y-%m-%d")
+                ed = datetime.strptime(p_dict.get('end_date', ''), "%Y-%m-%d")
+            except ValueError:
+                return
+            
+            days = (ed - sd).days + 1
+            if days <= 0:
+                return
+            
+            dw = self.app.day_width
+            if dw < 15: # if day width is too small, don't draw text
+                return
+                
+            painter.save()
+            font = QFont("Segoe UI", max(6, min(9, int(dw/3))))
+            painter.setFont(font)
+            
+            # To make text readable on both dark/light background:
+            painter.setPen(Qt.black)
+            
+            h = self.rect().height()
+            
+            for i in range(days):
+                d_str = (sd + timedelta(days=i)).strftime("%Y-%m-%d")
+                val = allocs.get(d_str, 0.0)
+                if val > 0.001:
+                    text = f"{val:g}工数" if dw >= 40 else f"{val:g}"
+                    rx = self.rect().left() + i * dw
+                    t_rect = QRectF(rx, self.rect().top(), dw, h)
+                    painter.drawText(t_rect, Qt.AlignCenter, text)
+            
+            painter.restore()
+
     def hoverMoveEvent(self, event):
         x = event.pos().x()
         w = self.rect().width()
@@ -297,6 +340,9 @@ class GanttBarItem(QGraphicsRectItem):
     def mouseDoubleClickEvent(self, event):
         super().mouseDoubleClickEvent(event)
         
+        if self.task.get('mode') == 'auto':
+            return
+            
         if 'periods' not in self.task:
             self.task['periods'] = [{'start_date': self.task.get('start_date', ''), 'end_date': self.task.get('end_date', '')}]
             
