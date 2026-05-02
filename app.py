@@ -677,20 +677,26 @@ class GanttApp(QMainWindow):
 
     def add_task(self):
         mode_idx = self.mode_combo.currentIndex()
-        if mode_idx == 0: mode = "manual"
-        elif mode_idx == 1: mode = "auto"
-        else: mode = "memo"
+        if mode_idx == 0: 
+            mode = "manual"
+            color = "#2e8b57"
+        elif mode_idx == 1: 
+            mode = "auto"
+            color = "#0078d4"
+        else: 
+            mode = "memo"
+            color = "#969696"
         
         t = {
             "name": f"新規タスク {len(self.tasks)+1}",
             "mode": mode,
-            "color": "#0078d4"
+            "color": color
         }
         
         if mode == "auto":
             t["auto_start_date"] = self.min_date.strftime("%Y-%m-%d")
             t["workload"] = 1.0 
-            t["periods"] = [{"start_date": t["auto_start_date"], "end_date": t["auto_start_date"]}]
+            t["periods"] = [{"start_date": t["auto_start_date"], "end_date": t["auto_start_date"], "color": color}]
             t["headcount"] = 0.0
         elif mode == "memo":
             t["periods"] = []
@@ -952,26 +958,32 @@ class GanttApp(QMainWindow):
         row = max(0, int(y / self.row_height))
         
         mode_idx = self.mode_combo.currentIndex()
-        if mode_idx == 0: mode = "manual"
-        elif mode_idx == 1: mode = "auto"
-        else: mode = "memo"
+        if mode_idx == 0: 
+            mode = "manual"
+            color = "#2e8b57"
+        elif mode_idx == 1: 
+            mode = "auto"
+            color = "#0078d4"
+        else: 
+            mode = "memo"
+            color = "#969696"
         
         t = {
             "name": f"新規 {len(self.tasks)+1}", 
             "mode": mode,
-            "color": "#0078d4"
+            "color": color
         }
         
         if mode == "auto":
             t["auto_start_date"] = sd.strftime("%Y-%m-%d")
             t["workload"] = 1.0 
-            t["periods"] = [{"start_date": sd.strftime("%Y-%m-%d"), "end_date": sd.strftime("%Y-%m-%d")}]
+            t["periods"] = [{"start_date": sd.strftime("%Y-%m-%d"), "end_date": sd.strftime("%Y-%m-%d"), "color": color}]
             t["headcount"] = 0.0
         elif mode == "memo":
-            t["periods"] = [{"start_date": sd.strftime("%Y-%m-%d"), "end_date": ed.strftime("%Y-%m-%d")}]
+            t["periods"] = [{"start_date": sd.strftime("%Y-%m-%d"), "end_date": ed.strftime("%Y-%m-%d"), "color": color}]
             t["headcount"] = 0.0
         else:
-            t["periods"] = [{"start_date": sd.strftime("%Y-%m-%d"), "end_date": ed.strftime("%Y-%m-%d")}]
+            t["periods"] = [{"start_date": sd.strftime("%Y-%m-%d"), "end_date": ed.strftime("%Y-%m-%d"), "color": color}]
             t["headcount"] = 1.0
             
         if row < len(self.visible_tasks_info):
@@ -1007,27 +1019,41 @@ class GanttApp(QMainWindow):
             
             if t.get('mode') != new_mode_en:
                 t['mode'] = new_mode_en
+                
+                if new_mode_en == 'auto':
+                    new_color = '#0078d4'
+                elif new_mode_en == 'memo':
+                    new_color = '#969696'
+                else:
+                    new_color = '#2e8b57'
+                t['color'] = new_color
+                
                 if new_mode_en == 'auto':
                     if not t.get('auto_start_date') and t.get('periods'):
                         t['auto_start_date'] = t['periods'][0].get('start_date', '')
                     if 'workload' not in t:
                         t['workload'] = 1.0 
                     t['headcount'] = 0.0
+                    if t.get('periods'):
+                        for p in t['periods']:
+                            p['color'] = new_color
+                            if p.get('text') in ["⚠️ キャパオーバー", "⚠️ 進行不可"]:
+                                p['text'] = ""
                 elif new_mode_en == 'memo':
                     t['headcount'] = 0.0
                     if t.get('periods'):
                         for p in t['periods']:
+                            p['color'] = new_color
                             if p.get('text') in ["⚠️ キャパオーバー", "⚠️ 進行不可"]:
                                 p['text'] = ""
-                                p['color'] = t.get('color', '#0078d4')
                 else:
                     if t.get('headcount', 0.0) == 0.0:
                         t['headcount'] = 1.0
                     if t.get('periods'):
                         for p in t['periods']:
+                            p['color'] = new_color
                             if p.get('text') in ["⚠️ キャパオーバー", "⚠️ 進行不可"]:
                                 p['text'] = ""
-                                p['color'] = t.get('color', '#0078d4')
                 
                 self.recalculate_auto_tasks()
         elif col == 4:
