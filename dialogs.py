@@ -54,7 +54,7 @@ class ColorGridDialog(QDialog):
             
             grid = QGridLayout()
             grid.setSpacing(4)
-            cols = 4 # 1行に4つ並べる
+            cols = 4 
             for i, (name, code) in enumerate(colors):
                 btn = QPushButton()
                 btn.setFixedSize(80, 30)
@@ -62,7 +62,6 @@ class ColorGridDialog(QDialog):
                 btn.setStyleSheet(f"background-color: {code}; border: 1px solid #ccc;")
                 btn.clicked.connect(lambda checked, c=code: self.select_color(c))
                 
-                # 色名も表示したい場合は重ねるか下に置く
                 grid.addWidget(btn, i // cols, i % cols)
             container_layout.addLayout(grid)
             
@@ -98,7 +97,7 @@ class SummaryDialog(QDialog):
         self.tabs.addTab(self.weekly_table, "週間集計")
         self.tabs.addTab(self.monthly_table, "月間集計")
         self.tabs.addTab(self.yearly_table, "年間集計")
-        self.tabs.setCurrentIndex(1) # デフォルトを月間集計にする
+        self.tabs.setCurrentIndex(1) 
         
         layout.addWidget(self.tabs)
         
@@ -173,7 +172,6 @@ class SummaryDialog(QDialog):
         table.setRowCount(len(group_data) + 1)
         table.setHorizontalHeaderLabels(["グループ名"] + [h[2] for h in headers])
         
-        # 期間ごとの全グループ合計を保持するリスト
         total_period_maps = [{} for _ in range(len(headers))]
         
         for r, g in enumerate(group_data):
@@ -194,16 +192,13 @@ class SummaryDialog(QDialog):
                             calc_start = max(psd, h_start)
                             calc_end = min(ped, h_end)
                             if calc_start <= calc_end:
-                                # 休日を含めた全ての重なり日数を計上
                                 overlap = (calc_end - calc_start).days + 1
                                 if overlap > 0:
                                     p_color = p.get('color')
-                                    # バーの色がタスクの色と異なる場合は集計から除外
                                     if p_color and p_color.lower() != t_color.lower():
                                         continue
                                     val = overlap * hc
                                     color_map[t_color] = color_map.get(t_color, 0) + val
-                                    # 全体合計に加算
                                     total_period_maps[c][t_color] = total_period_maps[c].get(t_color, 0) + val
                         except ValueError:
                             pass
@@ -220,7 +215,6 @@ class SummaryDialog(QDialog):
                     f = item.font(); f.setBold(True); item.setFont(f)
                 table.setItem(r, c + 1, item)
         
-        # 全体合計行の作成
         total_row_idx = len(group_data)
         total_label_item = QTableWidgetItem("全体合計")
         total_label_item.setBackground(QColor(240, 248, 255))
@@ -245,9 +239,8 @@ class HelpDialog(QDialog):
         layout = QVBoxLayout(self)
         
         self.browser = QTextBrowser()
-        self.browser.setOpenExternalLinks(True) # リンクをブラウザで開けるようにする
+        self.browser.setOpenExternalLinks(True) 
         
-        # README.md を読み込む
         readme_path = self.get_readme_path()
         if os.path.exists(readme_path):
             try:
@@ -267,7 +260,5 @@ class HelpDialog(QDialog):
 
     def get_readme_path(self):
         if hasattr(sys, '_MEIPASS'):
-            # PyInstallerでパッケージ化された場合
             return os.path.join(sys._MEIPASS, 'README.md')
-        # ソースから実行された場合
         return os.path.join(os.path.dirname(os.path.abspath(__file__)), 'README.md')

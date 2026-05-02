@@ -7,7 +7,7 @@ class HeadcountDelegate(QStyledItemDelegate):
         editor = QComboBox(parent)
         mode_text = index.model().data(index.siblingAtColumn(3), Qt.DisplayRole)
         
-        if mode_text == "生成":
+        if mode_text == "案件":
             editor.addItem("制限なし")
             
         for i in range(1, 21):

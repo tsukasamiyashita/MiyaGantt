@@ -287,7 +287,7 @@ class ChartRenderer:
                 item_color.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
             else:
                 is_auto = t.get('mode') == 'auto'
-                item_mode.setText("生成" if is_auto else "作成")
+                item_mode.setText("案件" if is_auto else "人員")
                 item_mode.setTextAlignment(Qt.AlignCenter)
                 
                 if is_auto:

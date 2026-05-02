@@ -87,7 +87,7 @@ class GanttApp(QMainWindow):
         
         tl.addWidget(QLabel(" ｜ デフォルト設定:"))
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems(["作成モード (手動)", "生成モード (自動)"])
+        self.mode_combo.addItems(["人員モード (手動)", "案件モード (自動)"])
         tl.addWidget(self.mode_combo)
         
         tl.addStretch()
@@ -539,7 +539,7 @@ class GanttApp(QMainWindow):
             groups_to_process.append((temp_group, temp_tasks))
             
         for g, tasks in groups_to_process:
-            # グループ内の各日における作成タスクの合計工数を計算（これが生成タスクの進行スピードになる）
+            # グループ内の各日における人員タスクの合計工数を計算（これが案件タスクの進行スピードになる）
             daily_speed = {}
             for t in tasks:
                 if t.get('mode', 'manual') == 'manual':
@@ -570,7 +570,7 @@ class GanttApp(QMainWindow):
                     auto_tasks.append({
                         'task': t,
                         'start': start_date,
-                        'rem_work': float(t.get('workload', 1.0)), # ★初期値を1.0に変更した場合の影響は既存タスクにはないが念の為ここも合わせておく
+                        'rem_work': float(t.get('workload', 1.0)), 
                         'end': None,
                         'last_progress': None,
                         'daily_allocations': {}
@@ -583,7 +583,7 @@ class GanttApp(QMainWindow):
             max_days = 3650
             days_simulated = 0
             
-            # 作成タスクが1つも存在しない場合は進行できない
+            # 人員タスクが1つも存在しない場合は進行できない
             has_speed = any(s > 0 for s in daily_speed.values())
             if not has_speed:
                 for at in auto_tasks:
@@ -596,7 +596,7 @@ class GanttApp(QMainWindow):
             max_speed_date_str = max(daily_speed.keys())
             max_speed_date = datetime.strptime(max_speed_date_str, "%Y-%m-%d")
             
-            # 生成タスクの開始日から設定した工数(rem_work)を引いていき、工数分のバーを作成する
+            # 案件タスクの開始日から設定した工数(rem_work)を引いていき、工数分のバーを作成する
             while any(at['rem_work'] > 0 for at in auto_tasks) and days_simulated < max_days:
                 # 終了条件：全てキャパシティが無い未来に入ったら打ち切り
                 if current_date > max_speed_date:
@@ -692,7 +692,7 @@ class GanttApp(QMainWindow):
         }
         if mode == "auto":
             t["auto_start_date"] = self.min_date.strftime("%Y-%m-%d")
-            t["workload"] = 1.0 # デフォルト値を変更
+            t["workload"] = 1.0 
             t["periods"] = [{"start_date": t["auto_start_date"], "end_date": t["auto_start_date"]}]
             t["headcount"] = 0.0
         else:
@@ -948,7 +948,7 @@ class GanttApp(QMainWindow):
         
         if mode == "auto":
             t["auto_start_date"] = sd.strftime("%Y-%m-%d")
-            t["workload"] = 1.0 # デフォルト値を変更
+            t["workload"] = 1.0 
             t["periods"] = [{"start_date": sd.strftime("%Y-%m-%d"), "end_date": sd.strftime("%Y-%m-%d")}]
             t["headcount"] = 0.0
         else:
@@ -1075,7 +1075,7 @@ class GanttApp(QMainWindow):
                     if not t.get('auto_start_date') and t.get('periods'):
                         t['auto_start_date'] = t['periods'][0].get('start_date', '')
                     if 'workload' not in t:
-                        t['workload'] = 1.0 # 変更
+                        t['workload'] = 1.0 
                     t['headcount'] = 0.0
                 else:
                     if t.get('headcount', 0.0) == 0.0:

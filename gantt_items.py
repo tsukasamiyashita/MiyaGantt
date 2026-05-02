@@ -94,7 +94,7 @@ class GanttBarItem(QGraphicsRectItem):
 
         start_d = p_dict.get('start_date', '')
         end_d = p_dict.get('end_date', '')
-        mode_str = "生成モード" if self.task.get('mode') == 'auto' else "作成モード"
+        mode_str = "案件モード" if self.task.get('mode') == 'auto' else "人員モード"
         self.setToolTip(f"タスク: {self.task.get('name','')}\nモード: {mode_str}\n期間: {start_d}〜{end_d}")
 
     def paint(self, painter, option, widget=None):
@@ -117,14 +117,13 @@ class GanttBarItem(QGraphicsRectItem):
                 return
             
             dw = self.app.day_width
-            if dw < 15: # if day width is too small, don't draw text
+            if dw < 15: 
                 return
                 
             painter.save()
             font = QFont("Segoe UI", max(6, min(9, int(dw/3))))
             painter.setFont(font)
             
-            # To make text readable on both dark/light background:
             painter.setPen(Qt.black)
             
             h = self.rect().height()
@@ -534,7 +533,7 @@ class ChartScene(QGraphicsScene):
                 }
                 if mode == "auto":
                     new_task["auto_start_date"] = d_str
-                    new_task["workload"] = 1.0 # デフォルト値を変更
+                    new_task["workload"] = 1.0 
                     new_task["periods"] = [{"start_date": d_str, "end_date": d_str}]
                     new_task["headcount"] = 0.0
                 else:
