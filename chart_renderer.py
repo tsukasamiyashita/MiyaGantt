@@ -125,7 +125,7 @@ class ChartRenderer:
                         if sub_t.get('mode') in ['auto', 'memo']:
                             continue
                         sub_periods = sub_t.get('periods', [])
-                        t_color = sub_t.get('color', '#0078d4')
+                        t_color = sub_t.get('color', '#0000ff')
                         for p in sub_periods:
                             if not p.get('start_date') or not p.get('end_date'): continue
                             
@@ -147,11 +147,11 @@ class ChartRenderer:
                             x = d_idx * self.app.day_width
                             r = min(self.app.day_width * 0.8, self.app.row_height * 0.6)
                             self.app.cs.addEllipse(x + (self.app.day_width - r)/2, row * self.app.row_height + (self.app.row_height - r)/2, r, r, 
-                                               QPen(Qt.NoPen), QBrush(QColor(0, 120, 212, 40))).setZValue(15)
+                                               QPen(Qt.NoPen), QBrush(QColor(0, 0, 255, 40))).setZValue(15)
                             
                             txt = self.app.cs.addText(f"{count:g}")
                             txt.setFont(QFont("Segoe UI", 9, QFont.Bold))
-                            txt.setDefaultTextColor(QColor(0, 120, 212))
+                            txt.setDefaultTextColor(QColor(0, 0, 255))
                             tw = txt.boundingRect().width()
                             th = txt.boundingRect().height()
                             txt.setPos(x + (self.app.day_width - tw)/2, row * self.app.row_height + (self.app.row_height - th)/2)
@@ -288,7 +288,7 @@ class ChartRenderer:
                 if is_auto:
                     item_mode.setText("⚡ 案件")
                     item_mode.setForeground(QColor(255, 255, 255))
-                    item_mode.setBackground(QColor(0, 120, 212))
+                    item_mode.setBackground(QColor(0, 0, 255))
                     
                     bg_row = QColor(245, 250, 255)
                     item_name.setBackground(bg_row)
@@ -302,7 +302,7 @@ class ChartRenderer:
                 elif is_memo:
                     item_mode.setText("📝 メモ")
                     item_mode.setForeground(QColor(255, 255, 255))
-                    item_mode.setBackground(QColor(150, 150, 150))
+                    item_mode.setBackground(QColor(128, 128, 128))
                     
                     bg_row = QColor(250, 250, 250)
                     item_name.setBackground(bg_row)
@@ -323,7 +323,7 @@ class ChartRenderer:
                 else:
                     item_mode.setText("👤 人員")
                     item_mode.setForeground(QColor(255, 255, 255))
-                    item_mode.setBackground(QColor(46, 139, 87))
+                    item_mode.setBackground(QColor(0, 128, 0))
                     
                     bg_row = QColor(255, 255, 255)
                     item_name.setBackground(bg_row)
@@ -344,7 +344,7 @@ class ChartRenderer:
                 item_hc.setTextAlignment(Qt.AlignCenter)
                 
                 item_color.setText("")
-                item_color.setBackground(QColor(t.get('color', '#0078d4')))
+                item_color.setBackground(QColor(t.get('color', '#0000ff')))
                 item_color.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
 
             for i, (h_start, h_end, _) in enumerate(headers):

@@ -181,7 +181,7 @@ class SummaryDialog(QDialog):
                 for t in g['tasks']:
                     if t.get('mode') in ['auto', 'memo']:
                         continue
-                    t_color = t.get('color', '#0078d4')
+                    t_color = t.get('color', '#0000ff')
                     hc = float(t.get('headcount', 1.0))
 
                     for p in t.get('periods', []):
@@ -211,7 +211,7 @@ class SummaryDialog(QDialog):
                 
                 item.setTextAlignment(Qt.AlignCenter)
                 if color_map:
-                    item.setForeground(QColor(0, 120, 212))
+                    item.setForeground(QColor(0, 0, 255))
                     f = item.font(); f.setBold(True); item.setFont(f)
                 table.setItem(r, c + 1, item)
         

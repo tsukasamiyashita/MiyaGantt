@@ -189,7 +189,7 @@ class GanttApp(QMainWindow):
             btn.setFixedHeight(24)
             btn.setStyleSheet("""
                 QPushButton { background-color: #f8f8f8; border: 1px solid #ddd; border-radius: 4px; color: #666; font-size: 10px; padding: 0 5px; }
-                QPushButton:checked { background-color: #e1f0ff; border: 1px solid #0078d4; color: #0078d4; font-weight: bold; }
+                QPushButton:checked { background-color: #e1f0ff; border: 1px solid #0000ff; color: #0000ff; font-weight: bold; }
                 QPushButton:hover { background-color: #eeeeee; }
             """)
             btn.clicked.connect(lambda checked, i=idx: self.toggle_column_visibility(i, checked))
@@ -679,13 +679,13 @@ class GanttApp(QMainWindow):
         mode_idx = self.mode_combo.currentIndex()
         if mode_idx == 0: 
             mode = "manual"
-            color = "#2e8b57"
+            color = "#008000"
         elif mode_idx == 1: 
             mode = "auto"
-            color = "#0078d4"
+            color = "#0000ff"
         else: 
             mode = "memo"
-            color = "#969696"
+            color = "#808080"
         
         t = {
             "name": f"新規タスク {len(self.tasks)+1}",
@@ -883,7 +883,7 @@ class GanttApp(QMainWindow):
             if task.get('mode') in ['auto', 'memo']:
                 continue
                 
-            t_color = task.get('color', '#0078d4')
+            t_color = task.get('color', '#0000ff')
             hc = task.get('headcount', 1.0)
                 
             for p in task.get('periods', []):
@@ -960,13 +960,13 @@ class GanttApp(QMainWindow):
         mode_idx = self.mode_combo.currentIndex()
         if mode_idx == 0: 
             mode = "manual"
-            color = "#2e8b57"
+            color = "#008000"
         elif mode_idx == 1: 
             mode = "auto"
-            color = "#0078d4"
+            color = "#0000ff"
         else: 
             mode = "memo"
-            color = "#969696"
+            color = "#808080"
         
         t = {
             "name": f"新規 {len(self.tasks)+1}", 
@@ -1021,11 +1021,11 @@ class GanttApp(QMainWindow):
                 t['mode'] = new_mode_en
                 
                 if new_mode_en == 'auto':
-                    new_color = '#0078d4'
+                    new_color = '#0000ff'
                 elif new_mode_en == 'memo':
-                    new_color = '#969696'
+                    new_color = '#808080'
                 else:
-                    new_color = '#2e8b57'
+                    new_color = '#008000'
                 t['color'] = new_color
                 
                 if new_mode_en == 'auto':
@@ -1247,11 +1247,11 @@ class GanttApp(QMainWindow):
     def get_color_groups(self):
         return [
             ("青・水色系", [
-                ("青", "#0078d4"), ("水色", "#00bcf2"), ("紺", "#002050"), 
+                ("青", "#0000ff"), ("水色", "#00bcf2"), ("紺", "#002050"), 
                 ("空色", "#87ceeb"), ("ロイヤルブルー", "#4169e1"), ("ネイビー", "#000080")
             ]),
             ("緑・ライム系", [
-                ("緑", "#107c10"), ("ライム", "#32cd32"), ("深緑", "#004b1c"),
+                ("緑", "#008000"), ("ライム", "#32cd32"), ("深緑", "#004b1c"),
                 ("ミント", "#98ffed"), ("フォレストグリーン", "#228b22"), ("シーグリーン", "#2e8b57")
             ]),
             ("赤・桃系", [
@@ -1271,7 +1271,7 @@ class GanttApp(QMainWindow):
                 ("チョコ", "#d2691e"), ("ベージュ", "#f5f5dc"), ("タン", "#d2b48c")
             ]),
             ("無彩色系", [
-                ("黒", "#323130"), ("灰色", "#7a7574"), ("シルバー", "#c0c0c0"),
+                ("黒", "#323130"), ("灰色", "#808080"), ("シルバー", "#c0c0c0"),
                 ("白鼠", "#e0e0e0"), ("スレートグレー", "#708090"), ("濃灰", "#404040")
             ])
         ]
