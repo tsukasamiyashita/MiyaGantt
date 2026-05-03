@@ -39,7 +39,7 @@ class GanttBarItem(QGraphicsRectItem):
     def update_appearance(self):
         periods = self.task.get('periods', [])
         p_dict = periods[self.period_index] if self.period_index < len(periods) else self.task
-        color_code = p_dict.get('color', self.task.get('color', '#0000ff'))
+        color_code = p_dict.get('color', self.task.get('color', '#0078d4'))
         bc = QColor(color_code)
         
         self.setPen(QPen(Qt.black if self.isSelected() else bc.darker(120), 2 if self.isSelected() else 1))
@@ -353,6 +353,170 @@ class GanttBarItem(QGraphicsRectItem):
                 except IndexError:
                     pass
 
+
+class GanttCommentItem(QGraphicsRectItem):
+    def __init__(self, task, row, comment_index, gantt_app, rect=None):
+        super().__init__(rect)
+        self.task = task
+        self.row = row
+        self.comment_index = comment_index
+        self.app = gantt_app
+        self.setFlags(QGraphicsRectItem.ItemIsMovable | 
+                      QGraphicsRectItem.ItemIsSelectable | 
+                      QGraphicsRectItem.ItemSendsGeometryChanges)
+        self.setAcceptHoverEvents(True)
+        self.setPen(QPen(Qt.NoPen))
+        self.setBrush(QBrush(Qt.transparent))
+        
+        self.text_item = QGraphicsTextItem('', self)
+        font = QFont("Segoe UI", 10)
+        self.text_item.setFont(font)
+        
+        self.update_appearance()
+
+    def update_appearance(self):
+        c_dict = self.task.get('comments', [])[self.comment_index]
+        self.text_item.setPlainText(c_dict.get('text', '📝 コメント'))
+        
+        color_code = c_dict.get('color', '#555555')
+        self.text_item.setDefaultTextColor(QColor(color_code))
+        
+        br = self.text_item.boundingRect()
+        self.setRect(0, 0, br.width() + 4, self.app.row_height - 10)
+        self.text_item.setPos(2, (self.rect().height() - br.height()) / 2)
+        
+        if self.isSelected():
+            self.setPen(QPen(QColor(0, 120, 212), 1, Qt.DashLine))
+            self.setBrush(QBrush(QColor(0, 120, 212, 20)))
+        else:
+            self.setPen(QPen(Qt.NoPen))
+            self.setBrush(QBrush(Qt.transparent))
+
+    def hoverMoveEvent(self, event):
+        self.setCursor(Qt.OpenHandCursor)
+        super().hoverMoveEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.setCursor(Qt.ClosedHandCursor)
+            self.drag_start_pos = self.pos()
+            self.drag_start_scene_pos = event.scenePos()
+            self.drag_start_row = self.row
+            
+            selected_items = [it for it in self.scene().selectedItems() if isinstance(it, GanttCommentItem)]
+            if self not in selected_items:
+                selected_items.append(self)
+            for it in selected_items:
+                it.drag_start_pos = it.pos()
+                it.drag_start_row = it.row
+                
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if hasattr(self, 'drag_start_scene_pos'):
+            snap_x = self.app.day_width
+            snap_y = self.app.row_height
+            
+            delta = event.scenePos() - self.drag_start_scene_pos
+            dx = round(delta.x() / snap_x) * snap_x
+            dy = round(delta.y() / snap_y) * snap_y
+            
+            selected_items = [it for it in self.scene().selectedItems() if isinstance(it, GanttCommentItem)]
+            if self not in selected_items:
+                selected_items.append(self)
+                
+            for it in selected_items:
+                if hasattr(it, 'drag_start_pos'):
+                    new_row = it.drag_start_row + int(dy / snap_y)
+                    max_row = len(self.app.visible_tasks_info) - 1 if self.app.visible_tasks_info else 0
+                    new_row = max(0, min(max_row, new_row))
+                    
+                    target_task = self.app.visible_tasks_info[new_row]['task']
+                    
+                    if target_task.get('is_group'):
+                        new_row = it.drag_start_row
+                        
+                    it.setPos(it.drag_start_pos.x() + dx, new_row * snap_y + 5)
+        else:
+            super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self.setCursor(Qt.OpenHandCursor)
+        
+        if hasattr(self, 'drag_start_scene_pos'):
+            snap_x = self.app.day_width
+            snap_y = self.app.row_height
+            
+            selected_items = [it for it in self.scene().selectedItems() if isinstance(it, GanttCommentItem)]
+            if self not in selected_items:
+                selected_items.append(self)
+                
+            moves = []
+            for it in selected_items:
+                sx = round(it.pos().x() / snap_x) * snap_x
+                sd = self.app.min_date + timedelta(days=sx / snap_x)
+                new_row = int((it.pos().y() - 5) / snap_y)
+                
+                moves.append({
+                    'item': it,
+                    'date': sd.strftime("%Y-%m-%d"),
+                    'new_row': new_row,
+                    'task': it.task,
+                    'comment_idx': it.comment_index
+                })
+                
+            moves.sort(key=lambda x: (x['task'] is self.task, x['comment_idx']), reverse=True)
+            
+            for m in moves:
+                c_dict = m['task']['comments'].pop(m['comment_idx'])
+                c_dict['date'] = m['date']
+                m['comment_data'] = c_dict
+                
+            for m in moves:
+                target_idx = m['new_row']
+                if target_idx < len(self.app.visible_tasks_info):
+                    target_task = self.app.visible_tasks_info[target_idx]['task']
+                    if target_task.get('is_group'):
+                        m['task'].setdefault('comments', []).append(m['comment_data'])
+                    else:
+                        target_task.setdefault('comments', []).append(m['comment_data'])
+                else:
+                    m['task'].setdefault('comments', []).append(m['comment_data'])
+
+            for it in selected_items:
+                if hasattr(it, 'drag_start_scene_pos'):
+                    del it.drag_start_scene_pos
+        
+        super().mouseReleaseEvent(event)
+        QTimer.singleShot(0, self.app.update_ui)
+
+    def mouseDoubleClickEvent(self, event):
+        super().mouseDoubleClickEvent(event)
+        c_dict = self.task.get('comments', [])[self.comment_index]
+        text, ok = QInputDialog.getText(self.app, "コメント編集", "コメント:", QLineEdit.Normal, c_dict.get('text', '📝 コメント'))
+        if ok:
+            c_dict['text'] = text
+            self.app.update_ui()
+
+    def contextMenuEvent(self, event):
+        menu = QMenu()
+        color_action = menu.addAction("色を変更")
+        del_action = menu.addAction("削除")
+        action = menu.exec(event.screenPos())
+        if action == color_action:
+            color_groups = self.app.get_color_groups()
+            dlg = ColorGridDialog(color_groups, self.app)
+            if dlg.exec():
+                self.task['comments'][self.comment_index]['color'] = dlg.selected_color
+                self.app.update_ui()
+        elif action == del_action:
+            try:
+                self.task['comments'].pop(self.comment_index)
+                QTimer.singleShot(0, self.app.update_ui)
+            except IndexError:
+                pass
+
+
 class HeaderScene(QGraphicsScene):
     def __init__(self, app):
         super().__init__()
@@ -388,7 +552,7 @@ class ChartScene(QGraphicsScene):
 
     def mousePressEvent(self, e):
         items = self.items(e.scenePos(), Qt.IntersectsItemShape, Qt.DescendingOrder, self.app.chart_view.transform())
-        gantt_item = next((it for it in items if isinstance(it, GanttBarItem)), None)
+        gantt_item = next((it for it in items if isinstance(it, (GanttBarItem, GanttCommentItem))), None)
 
         if not gantt_item and e.button() == Qt.LeftButton:
             if e.modifiers() & Qt.ShiftModifier:
@@ -413,7 +577,7 @@ class ChartScene(QGraphicsScene):
             rect = self.selection_rect.rect()
             self.clearSelection()
             for item in self.items(rect):
-                if isinstance(item, GanttBarItem):
+                if isinstance(item, GanttBarItem) or isinstance(item, GanttCommentItem):
                     item.setSelected(True)
             
             self.removeItem(self.selection_rect)
@@ -423,7 +587,7 @@ class ChartScene(QGraphicsScene):
 
         if self.start_x > 0:
             items = self.items(e.scenePos(), Qt.IntersectsItemShape, Qt.DescendingOrder, self.app.chart_view.transform())
-            gantt_item = next((it for it in items if isinstance(it, GanttBarItem)), None)
+            gantt_item = next((it for it in items if isinstance(it, (GanttBarItem, GanttCommentItem))), None)
             if not gantt_item:
                 if abs(e.scenePos().x() - self.start_x) > (self.app.day_width * 0.1):
                     self.app.create_task_from_drag(self.start_x, e.scenePos().x(), e.scenePos().y())
@@ -432,7 +596,7 @@ class ChartScene(QGraphicsScene):
 
     def mouseDoubleClickEvent(self, e):
         items = self.items(e.scenePos(), Qt.IntersectsItemShape, Qt.DescendingOrder, self.app.chart_view.transform())
-        gantt_item = next((it for it in items if isinstance(it, GanttBarItem)), None)
+        gantt_item = next((it for it in items if isinstance(it, (GanttBarItem, GanttCommentItem))), None)
             
         if not gantt_item and e.button() == Qt.LeftButton:
             y = e.scenePos().y()
@@ -461,7 +625,7 @@ class ChartScene(QGraphicsScene):
 
     def contextMenuEvent(self, e):
         item = self.itemAt(e.scenePos(), self.app.chart_view.transform())
-        if item and not isinstance(item, GanttBarItem):
+        if item and not isinstance(item, (GanttBarItem, GanttCommentItem)):
             item = None
             
         if not item:
@@ -475,15 +639,18 @@ class ChartScene(QGraphicsScene):
                 if task.get('is_group'):
                     add_task_in_group = menu.addAction("このグループにタスクを追加")
                     add_period_action = None
+                    add_comment_action = None
                 else:
                     task_name = task.get('name', '無題')
                     if task.get('mode') == 'auto':
                         add_period_action = menu.addAction(f"「{task_name}」の開始日をここに設定")
                     else:
                         add_period_action = menu.addAction(f"「{task_name}」に期間を追加")
+                    add_comment_action = menu.addAction(f"「{task_name}」にコメントを追加")
                     add_task_in_group = None
             else:
                 add_period_action = None
+                add_comment_action = None
                 add_task_in_group = None
             
             action = menu.exec(e.screenPos())
@@ -500,6 +667,11 @@ class ChartScene(QGraphicsScene):
                         task['periods'] = [{'start_date': task.get('start_date', ''), 'end_date': task.get('end_date', '')}]
                     task['periods'].append({"start_date": d_str, "end_date": d_str})
                 self.app.update_ui()
+            elif action == add_comment_action and add_comment_action:
+                if 'comments' not in task:
+                    task['comments'] = []
+                task['comments'].append({"date": d_str, "text": "📝 コメント", "color": "#333333"})
+                self.app.update_ui()
             elif action == add_task_in_group and add_task_in_group:
                 mode_idx = self.app.mode_combo.currentIndex()
                 if mode_idx == 0: 
@@ -515,7 +687,8 @@ class ChartScene(QGraphicsScene):
                 new_task = {
                     "name": "新規タスク",
                     "mode": mode,
-                    "color": color
+                    "color": color,
+                    "efficiency": 1.0
                 }
                 if mode == "auto":
                     new_task["auto_start_date"] = d_str

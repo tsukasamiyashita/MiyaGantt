@@ -4,7 +4,7 @@ import jpholiday
 from PySide6.QtCore import Qt, QRectF
 from PySide6.QtGui import QBrush, QPen, QColor, QFont
 from PySide6.QtWidgets import QTableWidgetItem
-from gantt_items import GanttBarItem
+from gantt_items import GanttBarItem, GanttCommentItem
 
 class ChartRenderer:
     def __init__(self, app):
@@ -165,20 +165,29 @@ class ChartRenderer:
                     else:
                         continue
                 
-                if not periods:
-                    continue
-                    
-                for p_idx, p in enumerate(periods):
-                    if not p.get('start_date') or not p.get('end_date'): continue
-                    sd = datetime.strptime(p['start_date'], "%Y-%m-%d")
-                    ed = datetime.strptime(p['end_date'], "%Y-%m-%d")
-                    bar_w = ((ed - sd).days + 1) * self.app.day_width
-                    bar = GanttBarItem(t, row, p_idx, self.app, QRectF(0, 0, bar_w, self.app.row_height - 20))
-                    bar.setPos((sd - self.app.min_date).days * self.app.day_width, row * self.app.row_height + 10)
-                    bar.setZValue(30)
-                    self.app.cs.addItem(bar)
+                if periods:
+                    for p_idx, p in enumerate(periods):
+                        if not p.get('start_date') or not p.get('end_date'): continue
+                        sd = datetime.strptime(p['start_date'], "%Y-%m-%d")
+                        ed = datetime.strptime(p['end_date'], "%Y-%m-%d")
+                        bar_w = ((ed - sd).days + 1) * self.app.day_width
+                        bar = GanttBarItem(t, row, p_idx, self.app, QRectF(0, 0, bar_w, self.app.row_height - 20))
+                        bar.setPos((sd - self.app.min_date).days * self.app.day_width, row * self.app.row_height + 10)
+                        bar.setZValue(30)
+                        self.app.cs.addItem(bar)
+                        
+                comments = t.get('comments')
+                if comments:
+                    for c_idx, c in enumerate(comments):
+                        if not c.get('date'): continue
+                        cd = datetime.strptime(c['date'], "%Y-%m-%d")
+                        comment_item = GanttCommentItem(t, row, c_idx, self.app, QRectF(0, 0, 50, self.app.row_height - 10))
+                        comment_item.setPos((cd - self.app.min_date).days * self.app.day_width, row * self.app.row_height + 5)
+                        comment_item.setZValue(40)
+                        self.app.cs.addItem(comment_item)
+                        
             except Exception as e:
-                print(f"Error drawing bar for row {row}: {e}")
+                print(f"Error drawing items for row {row}: {e}")
                 
         self.app.hs.setSceneRect(0, 0, tw_total, self.app.header_height)
         self.app.cs.setSceneRect(0, 0, tw_total, ch)
