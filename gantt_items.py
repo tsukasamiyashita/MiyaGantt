@@ -53,7 +53,21 @@ class GanttBarItem(QGraphicsRectItem):
 
         bar_text = p_dict.get('text', '')
         self.text_item.setPlainText(bar_text)
-        self.text_item.setPos(5, (self.rect().height() - self.text_item.boundingRect().height()) / 2)
+        
+        text_w = self.text_item.boundingRect().width()
+        bar_w = self.rect().width()
+        
+        if text_w > bar_w - 10 or "⚠️" in bar_text:
+            self.text_item.setPos(bar_w + 5, (self.rect().height() - self.text_item.boundingRect().height()) / 2)
+            if "⚠️" in bar_text:
+                self.text_item.setDefaultTextColor(QColor("#d13438"))
+            else:
+                self.text_item.setDefaultTextColor(QColor(50, 50, 50))
+            self.setZValue(35)
+        else:
+            self.text_item.setPos(5, (self.rect().height() - self.text_item.boundingRect().height()) / 2)
+            self.text_item.setDefaultTextColor(Qt.white)
+            self.setZValue(30)
 
         start_d = p_dict.get('start_date', '')
         end_d = p_dict.get('end_date', '')
@@ -87,7 +101,7 @@ class GanttBarItem(QGraphicsRectItem):
             font = QFont("Segoe UI", max(6, min(9, int(dw/3))))
             painter.setFont(font)
             
-            painter.setPen(Qt.black)
+            painter.setPen(Qt.white)
             
             h = self.rect().height()
             

@@ -587,7 +587,8 @@ class GanttApp(QMainWindow):
                 for at in auto_tasks:
                     t = at['task']
                     sd_str = at['start'].strftime("%Y-%m-%d")
-                    t['periods'] = [{"start_date": sd_str, "end_date": sd_str, "color": "#d13438", "text": "⚠️ 進行不可"}]
+                    rem = at['rem_work']
+                    t['periods'] = [{"start_date": sd_str, "end_date": sd_str, "color": "#d13438", "text": f"⚠️ 進行不可 (不足: {rem:g}工数)"}]
                 continue
                 
             max_speed_date_str = max(daily_speed.keys())
@@ -657,7 +658,7 @@ class GanttApp(QMainWindow):
                     else:
                         ed_str = sd_str
                     p_color = "#d13438"
-                    p_text = "⚠️ キャパオーバー"
+                    p_text = f"⚠️ キャパオーバー (不足: {at['rem_work']:g}工数)"
                 else:
                     ed_str = at['end'].strftime("%Y-%m-%d") if at['end'] else sd_str
                     p_color = t.get('color')
@@ -665,7 +666,7 @@ class GanttApp(QMainWindow):
                     if t.get('periods') and len(t['periods']) > 0:
                         prev_color = t['periods'][0].get('color', p_color)
                         prev_text = t['periods'][0].get('text', "")
-                        if prev_text in ["⚠️ キャパオーバー", "⚠️ 進行不可"]:
+                        if prev_text and ("⚠️ キャパオーバー" in prev_text or "⚠️ 進行不可" in prev_text):
                             p_color = t.get('color')
                             p_text = ""
                         else:
@@ -1037,14 +1038,14 @@ class GanttApp(QMainWindow):
                     if t.get('periods'):
                         for p in t['periods']:
                             p['color'] = new_color
-                            if p.get('text') in ["⚠️ キャパオーバー", "⚠️ 進行不可"]:
+                            if p.get('text') and ("⚠️ キャパオーバー" in p.get('text') or "⚠️ 進行不可" in p.get('text')):
                                 p['text'] = ""
                 elif new_mode_en == 'memo':
                     t['headcount'] = 0.0
                     if t.get('periods'):
                         for p in t['periods']:
                             p['color'] = new_color
-                            if p.get('text') in ["⚠️ キャパオーバー", "⚠️ 進行不可"]:
+                            if p.get('text') and ("⚠️ キャパオーバー" in p.get('text') or "⚠️ 進行不可" in p.get('text')):
                                 p['text'] = ""
                 else:
                     if t.get('headcount', 0.0) == 0.0:
@@ -1052,7 +1053,7 @@ class GanttApp(QMainWindow):
                     if t.get('periods'):
                         for p in t['periods']:
                             p['color'] = new_color
-                            if p.get('text') in ["⚠️ キャパオーバー", "⚠️ 進行不可"]:
+                            if p.get('text') and ("⚠️ キャパオーバー" in p.get('text') or "⚠️ 進行不可" in p.get('text')):
                                 p['text'] = ""
                 
                 self.recalculate_auto_tasks()
