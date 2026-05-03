@@ -182,7 +182,7 @@ class SummaryDialog(QDialog):
                     if t.get('mode') in ['auto', 'memo']:
                         continue
                     t_color = t.get('color', '#0000ff')
-                    hc = float(t.get('headcount', 1.0))
+                    hc = float(t.get('headcount', 1.0)) * float(t.get('efficiency', 1.0))
 
                     for p in t.get('periods', []):
                         if not p.get('start_date') or not p.get('end_date'): continue

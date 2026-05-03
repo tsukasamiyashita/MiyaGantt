@@ -15,7 +15,7 @@ from PySide6.QtGui import QBrush, QPen, QColor, QFont, QIcon, QPainter
 
 from dialogs import SettingsDialog, ColorGridDialog, SummaryDialog, HelpDialog
 from gantt_items import HeaderScene, ChartScene
-from task_table import TaskTable, HeadcountDelegate, ModeDelegate
+from task_table import TaskTable, HeadcountDelegate, ModeDelegate, EfficiencyDelegate
 from chart_renderer import ChartRenderer
 
 class GanttApp(QMainWindow):
@@ -180,7 +180,7 @@ class GanttApp(QMainWindow):
         self.col_actions = {}
         col_info = [
             (0, "マーク"), (1, "開閉"), (3, "モード"), (4, "人数"), 
-            (5, "期間"), (6, "色"), (7, "合計")
+            (5, "補正"), (6, "期間"), (7, "色"), (8, "合計")
         ]
         for idx, name in col_info:
             btn = QPushButton(name)
@@ -198,21 +198,23 @@ class GanttApp(QMainWindow):
         self.col_toggle_layout.addStretch()
         self.left_layout.addLayout(self.col_toggle_layout)
 
-        self.table = TaskTable(0, 7)
-        self.table.setHorizontalHeaderLabels(["", "", "タスク名", "モード", "人数", "期間/開始日", "色"])
+        self.table = TaskTable(0, 8)
+        self.table.setHorizontalHeaderLabels(["", "", "タスク名", "モード", "人数", "工数補正", "期間/開始日", "色"])
         self.table.setColumnWidth(0, 25)
         self.table.setColumnWidth(1, 35)
         self.table.setColumnWidth(2, 170)
         self.table.setColumnWidth(3, 45)
-        self.table.setColumnWidth(4, 60)
-        self.table.setColumnWidth(5, 145)
-        self.table.setColumnWidth(6, 40)
+        self.table.setColumnWidth(4, 45)
+        self.table.setColumnWidth(5, 65)
+        self.table.setColumnWidth(6, 145)
+        self.table.setColumnWidth(7, 40)
         
         self.table.horizontalHeader().setFixedHeight(self.header_height)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Interactive)
         self.table.verticalHeader().setDefaultSectionSize(self.row_height)
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.table.setItemDelegateForColumn(5, EfficiencyDelegate(self.table))
         self.table.setItemDelegateForColumn(4, HeadcountDelegate(self.table))
         self.table.setItemDelegateForColumn(3, ModeDelegate(self.table))
         
@@ -542,7 +544,7 @@ class GanttApp(QMainWindow):
             daily_speed = {}
             for t in tasks:
                 if t.get('mode', 'manual') == 'manual':
-                    hc = float(t.get('headcount', 1.0))
+                    hc = float(t.get('headcount', 1.0)) * float(t.get('efficiency', 1.0))
                     for p in t.get('periods', []):
                         if not p.get('start_date') or not p.get('end_date'): continue
                         try:
@@ -691,7 +693,8 @@ class GanttApp(QMainWindow):
         t = {
             "name": f"新規タスク {len(self.tasks)+1}",
             "mode": mode,
-            "color": color
+            "color": color,
+            "efficiency": 1.0
         }
         
         if mode == "auto":
@@ -727,6 +730,7 @@ class GanttApp(QMainWindow):
             "is_group": True,
             "collapsed": False,
             "headcount": 1.0,
+            "efficiency": 1.0,
             "color": "#555555"
         }
         r = self.table.currentRow()
@@ -822,7 +826,7 @@ class GanttApp(QMainWindow):
         headers = self.get_summary_headers(base_date)
         
         self.table.blockSignals(True)
-        labels = ["", "", "タスク名", "モード", "人数/工数", "期間/開始日", "色"] + [h[2] for h in headers]
+        labels = ["", "", "タスク名", "モード", "人数", "工数補正", "期間/開始日", "色"] + [h[2] for h in headers]
         if self.table.columnCount() != len(labels):
             self.table.setColumnCount(len(labels))
         self.table.setHorizontalHeaderLabels(labels)
@@ -830,7 +834,7 @@ class GanttApp(QMainWindow):
         for r, info in enumerate(self.visible_tasks_info):
             t = info['task']
             for i, (h_start, h_end, _) in enumerate(headers):
-                col_idx = 7 + i
+                col_idx = 8 + i
                 item_s = self.table.item(r, col_idx)
                 if not item_s:
                     item_s = QTableWidgetItem()
@@ -885,7 +889,7 @@ class GanttApp(QMainWindow):
                 continue
                 
             t_color = task.get('color', '#0000ff')
-            hc = task.get('headcount', 1.0)
+            hc = task.get('headcount', 1.0) * task.get('efficiency', 1.0)
                 
             for p in task.get('periods', []):
                 if not p.get('start_date') or not p.get('end_date'): continue
@@ -909,14 +913,14 @@ class GanttApp(QMainWindow):
             t = info['task']
             if t.get('is_group'):
                 for i, (h_start, h_end, _) in enumerate(headers):
-                    col_idx = 7 + i
+                    col_idx = 8 + i
                     item_s = self.table.item(r, col_idx)
                     if item_s:
                         day_map = self.get_task_workload_in_range(t, info['index'], h_start, h_end)
                         item_s.setText(self.format_summary_workload(day_map))
                 continue
             
-            period_item = self.table.item(r, 5)
+            period_item = self.table.item(r, 6)
             if period_item:
                 if t.get('mode') == 'auto':
                     period_item.setText(t.get('auto_start_date', ''))
@@ -931,7 +935,7 @@ class GanttApp(QMainWindow):
                     period_item.setText(", ".join(p_strs))
             
             for i, (h_start, h_end, _) in enumerate(headers):
-                col_idx = 7 + i
+                col_idx = 8 + i
                 item_s = self.table.item(r, col_idx)
                 if item_s:
                     is_auto = not t.get('is_group') and t.get('mode') == 'auto'
@@ -972,7 +976,8 @@ class GanttApp(QMainWindow):
         t = {
             "name": f"新規 {len(self.tasks)+1}", 
             "mode": mode,
-            "color": color
+            "color": color,
+            "efficiency": 1.0
         }
         
         if mode == "auto":
@@ -1090,8 +1095,17 @@ class GanttApp(QMainWindow):
                 item.setText(f"{int(t.get('headcount', 1.0))}")
                 self.table.blockSignals(False)
                 self.recalculate_auto_tasks()
-            
+                
         elif col == 5:
+            if t.get('is_group') or t.get('mode') != 'manual': return
+            val_str = item.text().replace('%', '').strip()
+            try:
+                t['efficiency'] = float(val_str) / 100.0
+                self.recalculate_auto_tasks()
+            except ValueError:
+                pass
+                
+        elif col == 6:
             if t.get('is_group'): return
             period_str = item.text()
             if t.get('mode') == 'auto':
@@ -1107,7 +1121,7 @@ class GanttApp(QMainWindow):
                     t['periods'] = parsed
                 else:
                     QMessageBox.warning(self, "エラー", "期間の形式が正しくありません。\n例: 04/01-04/05")
-        elif col >= 7:
+        elif col >= 8:
             if not t.get('is_group') and t.get('mode') == 'auto':
                 try:
                     val = float(item.text().replace('工数', '').strip())
@@ -1133,7 +1147,7 @@ class GanttApp(QMainWindow):
         info = self.visible_tasks_info[row]
         t = info['task']
         
-        if col == 6:
+        if col == 7:
             color_groups = self.get_color_groups()
             dlg = ColorGridDialog(color_groups, self)
             if dlg.exec():
@@ -1300,11 +1314,11 @@ class GanttApp(QMainWindow):
         return f"計{total_str}工数 ({', '.join(parts)})"
 
     def toggle_column_visibility(self, idx, visible):
-        if idx < 7:
+        if idx < 8:
             self.table.setColumnHidden(idx, not visible)
         else:
             self.summary_visible = visible
-            for i in range(7, self.table.columnCount()):
+            for i in range(8, self.table.columnCount()):
                 self.table.setColumnHidden(i, not visible)
         
         if idx in self.col_actions:
@@ -1325,7 +1339,7 @@ class GanttApp(QMainWindow):
         
         column_visibility = {}
         column_widths = {}
-        for i in range(7):
+        for i in range(8):
             column_visibility[str(i)] = not self.table.isColumnHidden(i)
             column_widths[str(i)] = self.table.columnWidth(i)
         
@@ -1368,7 +1382,7 @@ class GanttApp(QMainWindow):
             
             column_widths = config.get("column_widths", {})
             for idx_str, width in column_widths.items():
-                if int(idx_str) < 7:
+                if int(idx_str) < 8:
                     self.table.setColumnWidth(int(idx_str), width)
             
             splitter_sizes = config.get("splitter_sizes")
@@ -1386,7 +1400,7 @@ class GanttApp(QMainWindow):
             
             col_vis = config.get("column_visibility", {})
             for idx_str, visible in col_vis.items():
-                if int(idx_str) < 7:
+                if int(idx_str) < 8:
                     self.toggle_column_visibility(int(idx_str), visible)
         except Exception as e:
             print(f"Config load error: {e}")

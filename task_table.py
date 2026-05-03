@@ -2,6 +2,43 @@
 from PySide6.QtWidgets import QHeaderView, QTableWidget, QMenu, QStyledItemDelegate, QComboBox
 from PySide6.QtCore import Qt, QTimer
 
+class EfficiencyDelegate(QStyledItemDelegate):
+    def createEditor(self, parent, option, index):
+        mode_text = index.model().data(index.siblingAtColumn(3), Qt.DisplayRole)
+        
+        if mode_text == "メモ" or mode_text == "⚡ 案件":
+            return None
+
+        editor = QComboBox(parent)
+        for i in range(10, 210, 10):
+            editor.addItem(f"{i}%")
+            
+        editor.currentIndexChanged.connect(self.commitAndCloseEditor)
+        QTimer.singleShot(0, editor.showPopup)
+        return editor
+
+    def commitAndCloseEditor(self):
+        editor = self.sender()
+        self.commitData.emit(editor)
+        self.closeEditor.emit(editor, QStyledItemDelegate.NoHint)
+
+    def setEditorData(self, editor, index):
+        if editor is None: return
+        text = index.model().data(index, Qt.EditRole)
+        
+        val_str = str(text) if text else "100%"
+            
+        idx = editor.findText(val_str)
+        if idx >= 0:
+            editor.setCurrentIndex(idx)
+        else:
+            editor.setCurrentIndex(9)
+
+    def setModelData(self, editor, model, index):
+        if editor is None: return
+        val = editor.currentText()
+        model.setData(index, val, Qt.EditRole)
+
 class HeadcountDelegate(QStyledItemDelegate):
     def createEditor(self, parent, option, index):
         mode_text = index.model().data(index.siblingAtColumn(3), Qt.DisplayRole)
@@ -10,7 +47,7 @@ class HeadcountDelegate(QStyledItemDelegate):
             return None
 
         editor = QComboBox(parent)
-        if mode_text == "案件":
+        if mode_text == "⚡ 案件":
             editor.addItem("制限なし")
             
         for i in range(1, 21):
@@ -101,11 +138,11 @@ class TaskTable(QTableWidget):
 
     def show_header_menu(self, pos):
         menu = QMenu(self)
-        column_names = ["選択マーク", "開閉ボタン", "タスク名", "モード", "人数", "期間/開始日", "色", "集計"]
+        column_names = ["選択マーク", "開閉ボタン", "タスク名", "モード", "人数", "工数補正", "期間/開始日", "色", "集計"]
         for i, name in enumerate(column_names):
             action = menu.addAction(name)
             action.setCheckable(True)
-            if i < 7:
+            if i < 8:
                 action.setChecked(not self.isColumnHidden(i))
             else:
                 action.setChecked(self.window().summary_visible)

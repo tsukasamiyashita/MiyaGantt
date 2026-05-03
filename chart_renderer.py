@@ -138,7 +138,7 @@ class ChartRenderer:
                             s_idx = max(0, (psd - self.app.min_date).days)
                             e_idx = min(self.app.display_days - 1, (ped - self.app.min_date).days)
                             
-                            sub_hc = sub_t.get('headcount', 1.0)
+                            sub_hc = sub_t.get('headcount', 1.0) * sub_t.get('efficiency', 1.0)
                             for d_idx in range(s_idx, e_idx + 1):
                                 counts[d_idx] += sub_hc
                     
@@ -194,11 +194,11 @@ class ChartRenderer:
         threshold_date = self.app.get_threshold_date(visible_start)
         
         headers = self.app.get_summary_headers(threshold_date)
-        base_col_count = 7
+        base_col_count = 8
         total_cols = base_col_count + len(headers)
         self.app.table.setColumnCount(total_cols)
         
-        labels = ["", "", "タスク名", "モード", "人数", "期間/開始日", "色"] + [h[2] for h in headers]
+        labels = ["", "", "タスク名", "モード", "人数", "工数補正", "期間/開始日", "色"] + [h[2] for h in headers]
         self.app.table.setHorizontalHeaderLabels(labels)
         
         new_rows = len(self.app.visible_tasks_info)
@@ -250,12 +250,17 @@ class ChartRenderer:
             item_hc.setForeground(QColor(51, 51, 51))
             item_hc.setBackground(QColor(255, 255, 255))
             
-            item_period = self.app.table.item(r, 5)
+            item_eff = self.app.table.item(r, 5)
+            item_eff.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
+            item_eff.setForeground(QColor(51, 51, 51))
+            item_eff.setBackground(QColor(255, 255, 255))
+            
+            item_period = self.app.table.item(r, 6)
             item_period.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
             item_period.setForeground(QColor(51, 51, 51))
             item_period.setBackground(QColor(255, 255, 255))
             
-            item_color = self.app.table.item(r, 6)
+            item_color = self.app.table.item(r, 7)
             item_color.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
             item_color.setForeground(QColor(51, 51, 51))
             item_color.setBackground(QColor(255, 255, 255))
@@ -270,6 +275,10 @@ class ChartRenderer:
                 item_hc.setText(f"{int(t.get('headcount', 1.0))}")
                 item_hc.setTextAlignment(Qt.AlignCenter)
                 item_hc.setBackground(QColor(242, 242, 242))
+                
+                item_eff.setText("")
+                item_eff.setBackground(QColor(242, 242, 242))
+                item_eff.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                 
                 item_period.setText("")
                 item_period.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
@@ -293,11 +302,14 @@ class ChartRenderer:
                     bg_row = QColor(245, 250, 255)
                     item_name.setBackground(bg_row)
                     item_hc.setBackground(bg_row)
+                    item_eff.setBackground(bg_row)
                     item_period.setBackground(bg_row)
 
                     hc = t.get('headcount', 0.0)
                     item_hc.setText(f"{int(hc)}" if hc > 0 else "制限なし")
                     item_hc.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
+                    item_eff.setText("-")
+                    item_eff.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                     item_period.setText(t.get('auto_start_date', ''))
                 elif is_memo:
                     item_mode.setText("📝 メモ")
@@ -307,10 +319,13 @@ class ChartRenderer:
                     bg_row = QColor(250, 250, 250)
                     item_name.setBackground(bg_row)
                     item_hc.setBackground(bg_row)
+                    item_eff.setBackground(bg_row)
                     item_period.setBackground(bg_row)
 
                     item_hc.setText("-")
                     item_hc.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+                    item_eff.setText("-")
+                    item_eff.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                     
                     periods = t.get('periods', [])
                     p_strs = []
@@ -328,9 +343,13 @@ class ChartRenderer:
                     bg_row = QColor(255, 255, 255)
                     item_name.setBackground(bg_row)
                     item_hc.setBackground(bg_row)
+                    item_eff.setBackground(bg_row)
                     item_period.setBackground(bg_row)
 
                     item_hc.setText(f"{int(t.get('headcount', 1.0))}")
+                    eff = t.get('efficiency', 1.0)
+                    item_eff.setText(f"{int(eff * 100)}%")
+                    
                     periods = t.get('periods', [])
                     p_strs = []
                     for p in periods:
@@ -342,13 +361,14 @@ class ChartRenderer:
                     
                 item_mode.setTextAlignment(Qt.AlignCenter)
                 item_hc.setTextAlignment(Qt.AlignCenter)
+                item_eff.setTextAlignment(Qt.AlignCenter)
                 
                 item_color.setText("")
                 item_color.setBackground(QColor(t.get('color', '#0000ff')))
                 item_color.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
 
             for i, (h_start, h_end, _) in enumerate(headers):
-                col_idx = 7 + i
+                col_idx = 8 + i
                 item_s = self.app.table.item(r, col_idx)
                 
                 if not is_group and is_auto:
