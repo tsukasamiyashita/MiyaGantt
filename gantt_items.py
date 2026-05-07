@@ -577,7 +577,10 @@ class ChartScene(QGraphicsScene):
             rect = self.selection_rect.rect()
             self.clearSelection()
             for item in self.items(rect):
-                if isinstance(item, GanttBarItem) or isinstance(item, GanttCommentItem):
+                if isinstance(item, GanttBarItem):
+                    if item.task.get('mode') != 'auto':
+                        item.setSelected(True)
+                elif isinstance(item, GanttCommentItem):
                     item.setSelected(True)
             
             self.removeItem(self.selection_rect)
