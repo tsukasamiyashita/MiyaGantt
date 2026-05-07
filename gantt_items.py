@@ -335,8 +335,37 @@ class GanttBarItem(QGraphicsRectItem):
     def contextMenuEvent(self, event):
         menu = QMenu()
         color_action = menu.addAction("色を変更")
+        
+        copy_action = None
+        cut_action = None
+        if self.task.get('mode') in ['manual', 'memo']:
+            copy_action = menu.addAction("コピー")
+            cut_action = menu.addAction("切り取り")
+            
         del_action = menu.addAction("この期間を削除")
+
+        selected_items = [it for it in self.scene().selectedItems() if isinstance(it, GanttBarItem) and it.task.get('mode') in ['manual', 'memo']]
+        if self not in selected_items:
+            selected_items.append(self)
+            
+        pre_copied_periods = []
+        if selected_items:
+            min_row = min(it.row for it in selected_items)
+            for it in selected_items:
+                if hasattr(it, 'period_dict'):
+                    p_copy = {}
+                    for k in ['start_date', 'end_date', 'color', 'text']:
+                        if k in it.period_dict:
+                            p_copy[k] = it.period_dict[k]
+                    p_copy['row_offset'] = it.row - min_row
+                    pre_copied_periods.append({
+                        'task': it.task,
+                        'period_dict': it.period_dict,
+                        'copy_data': p_copy
+                    })
+
         action = menu.exec(event.screenPos())
+        
         if action == color_action:
             color_groups = self.app.get_color_groups()
             dlg = ColorGridDialog(color_groups, self.app)
@@ -345,6 +374,19 @@ class GanttBarItem(QGraphicsRectItem):
                     self.task['periods'] = [{'start_date': self.task.get('start_date', ''), 'end_date': self.task.get('end_date', '')}]
                 self.task['periods'][self.period_index]['color'] = dlg.selected_color
                 self.app.update_ui()
+        elif copy_action and action == copy_action:
+            self.app.clipboard_periods = [p['copy_data'] for p in pre_copied_periods]
+        elif cut_action and action == cut_action:
+            self.app.clipboard_periods = [p['copy_data'] for p in pre_copied_periods]
+            for p in pre_copied_periods:
+                task = p['task']
+                period_dict = p['period_dict']
+                if 'periods' in task:
+                    try:
+                        task['periods'].remove(period_dict)
+                    except ValueError:
+                        pass
+            QTimer.singleShot(0, self.app.update_ui)
         elif action == del_action:
             if 'periods' in self.task:
                 try:
@@ -643,18 +685,24 @@ class ChartScene(QGraphicsScene):
                     add_task_in_group = menu.addAction("このグループにタスクを追加")
                     add_period_action = None
                     add_comment_action = None
+                    paste_action = None
                 else:
                     task_name = task.get('name', '無題')
                     if task.get('mode') == 'auto':
                         add_period_action = menu.addAction(f"「{task_name}」の開始日をここに設定")
+                        paste_action = None
                     else:
                         add_period_action = menu.addAction(f"「{task_name}」に期間を追加")
+                        paste_action = None
+                        if hasattr(self.app, 'clipboard_periods') and self.app.clipboard_periods:
+                            paste_action = menu.addAction("貼り付け")
                     add_comment_action = menu.addAction(f"「{task_name}」にコメントを追加")
                     add_task_in_group = None
             else:
                 add_period_action = None
                 add_comment_action = None
                 add_task_in_group = None
+                paste_action = None
             
             action = menu.exec(e.screenPos())
             x = e.scenePos().x()
@@ -669,6 +717,38 @@ class ChartScene(QGraphicsScene):
                     if 'periods' not in task:
                         task['periods'] = [{'start_date': task.get('start_date', ''), 'end_date': task.get('end_date', '')}]
                     task['periods'].append({"start_date": d_str, "end_date": d_str})
+                self.app.update_ui()
+            elif paste_action and action == paste_action:
+                try:
+                    target_d = datetime.strptime(d_str, "%Y-%m-%d")
+                    first_item_sd = datetime.strptime(self.app.clipboard_periods[0]['start_date'], "%Y-%m-%d")
+                    delta_days = (target_d - first_item_sd).days
+                except (ValueError, KeyError, IndexError):
+                    delta_days = 0
+
+                for p_data in self.app.clipboard_periods:
+                    new_p = p_data.copy()
+                    row_offset = new_p.pop('row_offset', 0)
+                    target_row = row + row_offset
+                    
+                    if target_row < len(self.app.visible_tasks_info):
+                        target_task = self.app.visible_tasks_info[target_row]['task']
+                        if target_task.get('is_group') or target_task.get('mode') == 'auto':
+                            continue
+                            
+                        if 'periods' not in target_task:
+                            target_task['periods'] = []
+                            
+                        try:
+                            orig_sd = datetime.strptime(new_p['start_date'], "%Y-%m-%d")
+                            orig_ed = datetime.strptime(new_p['end_date'], "%Y-%m-%d")
+                            new_sd = orig_sd + timedelta(days=delta_days)
+                            new_ed = orig_ed + timedelta(days=delta_days)
+                            new_p['start_date'] = new_sd.strftime("%Y-%m-%d")
+                            new_p['end_date'] = new_ed.strftime("%Y-%m-%d")
+                        except ValueError:
+                            pass
+                        target_task['periods'].append(new_p)
                 self.app.update_ui()
             elif action == add_comment_action and add_comment_action:
                 if 'comments' not in task:
