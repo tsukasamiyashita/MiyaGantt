@@ -52,6 +52,7 @@ class GanttApp(QMainWindow):
         self.init_history()
         self.init_ui()
         self.apply_styles()
+        self.update_history_buttons()
 
     def apply_styles(self):
         self.setStyleSheet("""
@@ -61,13 +62,15 @@ class GanttApp(QMainWindow):
             QTableWidget::item:selected { background-color: transparent; color: #333333; }
             QHeaderView::section { background-color: #e8e8e8; color: #333333; border: 1px solid #cccccc; padding: 4px; font-weight: bold; }
             QPushButton { background-color: #ffffff; border: 1px solid #cccccc; padding: 6px 12px; border-radius: 4px; }
-            QPushButton:hover { background-color: #e8e8e8; }
+            QPushButton:hover:!disabled { background-color: #e8e8e8; }
+            QPushButton:disabled { background-color: #f5f5f5; color: #aaaaaa; border: 1px solid #e0e0e0; }
         """)
 
     def init_history(self):
         self.undo_stack = []
         self.redo_stack = []
         self.current_state_json = self.get_state_json()
+        self.update_history_buttons()
 
     def get_state_json(self):
         return json.dumps({
@@ -83,6 +86,7 @@ class GanttApp(QMainWindow):
             self.current_state_json = new_state
             if len(self.undo_stack) > 100:
                 self.undo_stack.pop(0)
+            self.update_history_buttons()
 
     def undo(self):
         if not self.undo_stack: return
@@ -90,6 +94,7 @@ class GanttApp(QMainWindow):
         self.redo_stack.append(self.current_state_json)
         self.current_state_json = self.undo_stack.pop()
         self.restore_state_json(self.current_state_json)
+        self.update_history_buttons()
 
     def redo(self):
         if not self.redo_stack: return
@@ -97,6 +102,13 @@ class GanttApp(QMainWindow):
         self.undo_stack.append(self.current_state_json)
         self.current_state_json = self.redo_stack.pop()
         self.restore_state_json(self.current_state_json)
+        self.update_history_buttons()
+
+    def update_history_buttons(self):
+        if hasattr(self, 'btn_undo'):
+            self.btn_undo.setEnabled(len(self.undo_stack) > 0)
+        if hasattr(self, 'btn_redo'):
+            self.btn_redo.setEnabled(len(self.redo_stack) > 0)
 
     def restore_state_json(self, state_json):
         state = json.loads(state_json)
