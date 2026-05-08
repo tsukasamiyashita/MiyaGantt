@@ -49,6 +49,7 @@ class GanttApp(QMainWindow):
         self.snap_timer.setSingleShot(True)
         self.snap_timer.timeout.connect(self.snap_horizontal_scroll)
         
+        self.init_history()
         self.init_ui()
         self.apply_styles()
 
@@ -63,6 +64,47 @@ class GanttApp(QMainWindow):
             QPushButton:hover { background-color: #e8e8e8; }
         """)
 
+    def init_history(self):
+        self.undo_stack = []
+        self.redo_stack = []
+        self.current_state_json = self.get_state_json()
+
+    def get_state_json(self):
+        return json.dumps({
+            "tasks": self.tasks,
+            "custom_holidays": self.custom_holidays
+        }, ensure_ascii=False)
+
+    def save_state_if_changed(self):
+        new_state = self.get_state_json()
+        if new_state != self.current_state_json:
+            self.undo_stack.append(self.current_state_json)
+            self.redo_stack.clear()
+            self.current_state_json = new_state
+            if len(self.undo_stack) > 100:
+                self.undo_stack.pop(0)
+
+    def undo(self):
+        if not self.undo_stack: return
+        self.table.clearSelection()
+        self.redo_stack.append(self.current_state_json)
+        self.current_state_json = self.undo_stack.pop()
+        self.restore_state_json(self.current_state_json)
+
+    def redo(self):
+        if not self.redo_stack: return
+        self.table.clearSelection()
+        self.undo_stack.append(self.current_state_json)
+        self.current_state_json = self.redo_stack.pop()
+        self.restore_state_json(self.current_state_json)
+
+    def restore_state_json(self, state_json):
+        state = json.loads(state_json)
+        self.tasks = state["tasks"]
+        self.custom_holidays = state["custom_holidays"]
+        self.recalculate_auto_tasks()
+        self.update_ui()
+
     def init_ui(self):
         mw = QWidget()
         self.setCentralWidget(mw)
@@ -74,16 +116,28 @@ class GanttApp(QMainWindow):
         self.btn_up = QPushButton("↑")
         self.btn_down = QPushButton("↓")
         self.btn_del = QPushButton("削除")
+        self.btn_undo = QPushButton("↶ 戻る")
+        self.btn_redo = QPushButton("↷ 進む")
+        self.btn_undo.setToolTip("元に戻す (Ctrl+Z)")
+        self.btn_redo.setToolTip("やり直し (Ctrl+Y)")
+        
         self.btn_add.clicked.connect(self.add_task)
         self.btn_group.clicked.connect(self.add_group)
         self.btn_up.clicked.connect(self.move_row_up)
         self.btn_down.clicked.connect(self.move_row_down)
         self.btn_del.clicked.connect(self.delete_task)
+        self.btn_undo.clicked.connect(self.undo)
+        self.btn_redo.clicked.connect(self.redo)
+        self.btn_undo.setShortcut("Ctrl+Z")
+        self.btn_redo.setShortcut("Ctrl+Y")
+        
         tl.addWidget(self.btn_add)
         tl.addWidget(self.btn_group)
         tl.addWidget(self.btn_up)
         tl.addWidget(self.btn_down)
         tl.addWidget(self.btn_del)
+        tl.addWidget(self.btn_undo)
+        tl.addWidget(self.btn_redo)
         
         tl.addWidget(QLabel(" ｜ デフォルト設定:"))
         self.mode_combo = QComboBox()
@@ -412,6 +466,7 @@ class GanttApp(QMainWindow):
             if n_info['task'] == task_to_track:
                 self.table.setCurrentCell(i, 2)
                 break
+        self.save_state_if_changed()
 
     def move_row_down(self):
         row = self.table.currentRow()
@@ -456,6 +511,7 @@ class GanttApp(QMainWindow):
             if n_info['task'] == task_to_track:
                 self.table.setCurrentCell(i, 2)
                 break
+        self.save_state_if_changed()
 
     def move_tasks(self, source_rows, target_row, refresh_chart=True):
         if not source_rows: return
@@ -513,6 +569,7 @@ class GanttApp(QMainWindow):
         self.recalculate_auto_tasks()
         self.update_ui(refresh_chart)
         self.update_selection_mark()
+        self.save_state_if_changed()
 
     def update_selection_mark(self, *args):
         self.table.blockSignals(True)
@@ -729,6 +786,7 @@ class GanttApp(QMainWindow):
             if info['task'] is t:
                 self.table.setCurrentCell(i, 2)
                 break
+        self.save_state_if_changed()
 
     def add_group(self):
         g = {
@@ -752,6 +810,7 @@ class GanttApp(QMainWindow):
             if info['task'] is g:
                 self.table.setCurrentCell(i, 2)
                 break
+        self.save_state_if_changed()
 
     def delete_task(self):
         r = self.table.currentRow()
@@ -761,6 +820,7 @@ class GanttApp(QMainWindow):
                 self.tasks.pop(idx)
                 self.recalculate_auto_tasks()
                 self.update_ui()
+                self.save_state_if_changed()
 
     def get_visible_tasks_info(self):
         visible = []
@@ -1006,6 +1066,7 @@ class GanttApp(QMainWindow):
             
         self.recalculate_auto_tasks()
         self.update_ui()
+        self.save_state_if_changed()
 
     def update_ui(self, refresh_chart=True):
         self.renderer.update_ui(refresh_chart)
@@ -1137,6 +1198,7 @@ class GanttApp(QMainWindow):
                 self.recalculate_auto_tasks()
         
         self.update_ui()
+        self.save_state_if_changed()
 
     def on_table_cell_clicked(self, row, col):
         if row >= len(self.visible_tasks_info): return
@@ -1147,6 +1209,7 @@ class GanttApp(QMainWindow):
             if t.get('is_group'):
                 t['collapsed'] = not t.get('collapsed', False)
                 self.update_ui()
+                self.save_state_if_changed()
 
     def on_table_cell_double_clicked(self, row, col):
         if row >= len(self.visible_tasks_info): return
@@ -1159,6 +1222,7 @@ class GanttApp(QMainWindow):
             if dlg.exec():
                 t['color'] = dlg.selected_color
                 self.update_ui()
+                self.save_state_if_changed()
 
     def scroll_to_today(self):
         today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -1472,6 +1536,7 @@ class GanttApp(QMainWindow):
                     
                 self.recalculate_auto_tasks()
                 self.update_ui()
+                self.init_history()
             except Exception as e:
                 QMessageBox.critical(self, "エラー", f"読込失敗: {e}")
 

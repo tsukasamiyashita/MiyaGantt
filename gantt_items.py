@@ -315,6 +315,7 @@ class GanttBarItem(QGraphicsRectItem):
                     if isinstance(item, GanttBarItem) and hasattr(item, 'period_dict'):
                         if item.period_dict in selected_period_dicts:
                             item.setSelected(True)
+            self.app.save_state_if_changed()
 
         QTimer.singleShot(0, finalize_ui)
 
@@ -336,6 +337,7 @@ class GanttBarItem(QGraphicsRectItem):
                 p_dict['text'] = text
                 self.update_appearance()
                 self.app.update_ui()
+                self.app.save_state_if_changed()
 
     def contextMenuEvent(self, event):
         menu = QMenu()
@@ -379,6 +381,7 @@ class GanttBarItem(QGraphicsRectItem):
                     self.task['periods'] = [{'start_date': self.task.get('start_date', ''), 'end_date': self.task.get('end_date', '')}]
                 self.task['periods'][self.period_index]['color'] = dlg.selected_color
                 self.app.update_ui()
+                self.app.save_state_if_changed()
         elif copy_action and action == copy_action:
             self.app.clipboard_periods = [p['copy_data'] for p in pre_copied_periods]
         elif cut_action and action == cut_action:
@@ -391,12 +394,12 @@ class GanttBarItem(QGraphicsRectItem):
                         task['periods'].remove(period_dict)
                     except ValueError:
                         pass
-            QTimer.singleShot(0, self.app.update_ui)
+            QTimer.singleShot(0, lambda: (self.app.update_ui(), self.app.save_state_if_changed()))
         elif action == del_action:
             if 'periods' in self.task:
                 try:
                     self.task['periods'].pop(self.period_index)
-                    QTimer.singleShot(0, self.app.update_ui)
+                    QTimer.singleShot(0, lambda: (self.app.update_ui(), self.app.save_state_if_changed()))
                 except IndexError:
                     pass
 
@@ -535,7 +538,7 @@ class GanttCommentItem(QGraphicsRectItem):
                     del it.drag_start_scene_pos
         
         super().mouseReleaseEvent(event)
-        QTimer.singleShot(0, self.app.update_ui)
+        QTimer.singleShot(0, lambda: (self.app.update_ui(), self.app.save_state_if_changed()))
 
     def mouseDoubleClickEvent(self, event):
         super().mouseDoubleClickEvent(event)
@@ -544,6 +547,7 @@ class GanttCommentItem(QGraphicsRectItem):
         if ok:
             c_dict['text'] = text
             self.app.update_ui()
+            self.app.save_state_if_changed()
 
     def contextMenuEvent(self, event):
         menu = QMenu()
@@ -556,10 +560,11 @@ class GanttCommentItem(QGraphicsRectItem):
             if dlg.exec():
                 self.task['comments'][self.comment_index]['color'] = dlg.selected_color
                 self.app.update_ui()
+                self.app.save_state_if_changed()
         elif action == del_action:
             try:
                 self.task['comments'].pop(self.comment_index)
-                QTimer.singleShot(0, self.app.update_ui)
+                QTimer.singleShot(0, lambda: (self.app.update_ui(), self.app.save_state_if_changed()))
             except IndexError:
                 pass
 
@@ -586,6 +591,7 @@ class HeaderScene(QGraphicsScene):
                     
                     self.app.draw_chart()
                     event.accept()
+                    self.app.save_state_if_changed()
                     return
         super().mousePressEvent(event)
 
@@ -670,6 +676,7 @@ class ChartScene(QGraphicsScene):
                     task['periods'].append({"start_date": d_str, "end_date": d_str, "text": ""})
                 self.app.update_ui()
                 e.accept()
+                self.app.save_state_if_changed()
                 return
         super().mouseDoubleClickEvent(e)
 
@@ -723,6 +730,7 @@ class ChartScene(QGraphicsScene):
                         task['periods'] = [{'start_date': task.get('start_date', ''), 'end_date': task.get('end_date', '')}]
                     task['periods'].append({"start_date": d_str, "end_date": d_str})
                 self.app.update_ui()
+                self.app.save_state_if_changed()
             elif paste_action and action == paste_action:
                 try:
                     target_d = datetime.strptime(d_str, "%Y-%m-%d")
@@ -755,11 +763,13 @@ class ChartScene(QGraphicsScene):
                             pass
                         target_task['periods'].append(new_p)
                 self.app.update_ui()
+                self.app.save_state_if_changed()
             elif action == add_comment_action and add_comment_action:
                 if 'comments' not in task:
                     task['comments'] = []
                 task['comments'].append({"date": d_str, "text": "📝 コメント", "color": "#333333"})
                 self.app.update_ui()
+                self.app.save_state_if_changed()
             elif action == add_task_in_group and add_task_in_group:
                 mode_idx = self.app.mode_combo.currentIndex()
                 if mode_idx == 0: 
@@ -793,5 +803,6 @@ class ChartScene(QGraphicsScene):
                 self.app.tasks.insert(info['index'] + 1, new_task)
                 self.app.recalculate_auto_tasks()
                 self.app.update_ui()
+                self.app.save_state_if_changed()
         else:
             super().contextMenuEvent(e)
