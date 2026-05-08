@@ -1,7 +1,7 @@
 # tsukasamiyashita/miyagantt/MiyaGantt-46a1664b6d1737cb32f1dd17429ce06cca8dc678/gantt_items.py
 from datetime import datetime, timedelta
-from PySide6.QtWidgets import (QGraphicsRectItem, QGraphicsTextItem, QGraphicsScene, 
-                               QMenu, QLineEdit, QInputDialog)
+from PySide6.QtWidgets import (QGraphicsItem, QGraphicsRectItem, QGraphicsTextItem, QGraphicsScene, 
+                               QMenu, QLineEdit, QInputDialog, QStyle)
 from PySide6.QtCore import Qt, QRectF, QTimer, QPointF
 from PySide6.QtGui import QBrush, QPen, QColor, QFont, QPainter
 from dialogs import ColorGridDialog
@@ -42,8 +42,14 @@ class GanttBarItem(QGraphicsRectItem):
         color_code = p_dict.get('color', self.task.get('color', '#0078d4'))
         bc = QColor(color_code)
         
-        self.setPen(QPen(Qt.black if self.isSelected() else bc.darker(120), 2 if self.isSelected() else 1))
-        self.setBrush(QBrush(bc))
+        if self.isSelected():
+            self.setPen(QPen(QColor("#ff3300"), 3))
+            self.setBrush(QBrush(bc.lighter(115)))
+        else:
+            self.setPen(QPen(bc.darker(120), 1))
+            self.setBrush(QBrush(bc))
+
+        base_z = 40 if self.isSelected() else 30
 
         periods = self.task.get('periods')
         if periods is not None and self.period_index < len(periods):
@@ -63,18 +69,24 @@ class GanttBarItem(QGraphicsRectItem):
                 self.text_item.setDefaultTextColor(QColor("#d13438"))
             else:
                 self.text_item.setDefaultTextColor(QColor(50, 50, 50))
-            self.setZValue(35)
+            self.setZValue(base_z + 5)
         else:
             self.text_item.setPos(5, (self.rect().height() - self.text_item.boundingRect().height()) / 2)
             self.text_item.setDefaultTextColor(Qt.white)
-            self.setZValue(30)
+            self.setZValue(base_z)
 
         start_d = p_dict.get('start_date', '')
         end_d = p_dict.get('end_date', '')
         mode_str = "⚡ 案件モード" if self.task.get('mode') == 'auto' else "📝 メモモード" if self.task.get('mode') == 'memo' else "👤 人員モード"
         self.setToolTip(f"タスク: {self.task.get('name','')}\nモード: {mode_str}\n期間: {start_d}〜{end_d}")
 
+    def itemChange(self, change, value):
+        if change == QGraphicsItem.ItemSelectedHasChanged:
+            self.update_appearance()
+        return super().itemChange(change, value)
+
     def paint(self, painter, option, widget=None):
+        option.state &= ~QStyle.State_Selected
         super().paint(painter, option, widget)
         
         if self.task.get('mode') == 'auto' and self.rect().width() > 0:
@@ -436,11 +448,22 @@ class GanttCommentItem(QGraphicsRectItem):
         self.text_item.setPos(2, (self.rect().height() - br.height()) / 2)
         
         if self.isSelected():
-            self.setPen(QPen(QColor(0, 120, 212), 1, Qt.DashLine))
-            self.setBrush(QBrush(QColor(0, 120, 212, 20)))
+            self.setPen(QPen(QColor("#ff3300"), 2, Qt.DashLine))
+            self.setBrush(QBrush(QColor(255, 51, 0, 30)))
+            self.setZValue(45)
         else:
             self.setPen(QPen(Qt.NoPen))
             self.setBrush(QBrush(Qt.transparent))
+            self.setZValue(35)
+
+    def itemChange(self, change, value):
+        if change == QGraphicsItem.ItemSelectedHasChanged:
+            self.update_appearance()
+        return super().itemChange(change, value)
+
+    def paint(self, painter, option, widget=None):
+        option.state &= ~QStyle.State_Selected
+        super().paint(painter, option, widget)
 
     def hoverMoveEvent(self, event):
         self.setCursor(Qt.OpenHandCursor)
