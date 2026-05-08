@@ -545,8 +545,14 @@ class GanttApp(QMainWindow):
             for t in tasks:
                 if t.get('mode', 'manual') == 'manual':
                     hc = float(t.get('headcount', 1.0)) * float(t.get('efficiency', 1.0))
+                    t_color = t.get('color', '#008000')
                     for p in t.get('periods', []):
                         if not p.get('start_date') or not p.get('end_date'): continue
+                        
+                        p_color = p.get('color')
+                        if p_color and p_color.lower() != t_color.lower():
+                            continue
+                            
                         try:
                             sd = datetime.strptime(p['start_date'], "%Y-%m-%d")
                             ed = datetime.strptime(p['end_date'], "%Y-%m-%d")
