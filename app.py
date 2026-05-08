@@ -13,9 +13,9 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                QStyleOptionGraphicsItem, QGraphicsTextItem)
 from PySide6.QtCore import Qt, QTimer, QRectF, QPointF
 from PySide6.QtGui import QBrush, QPen, QColor, QFont, QIcon, QPainter, QPageLayout
-from PySide6.QtPrintSupport import QPrinter
+from PySide6.QtPrintSupport import QPrinter, QPrintPreviewDialog
 
-from dialogs import SettingsDialog, ColorGridDialog, SummaryDialog, HelpDialog, PrintSettingsDialog, CustomPrintPreviewDialog
+from dialogs import SettingsDialog, ColorGridDialog, SummaryDialog, HelpDialog, PrintSettingsDialog
 from gantt_items import HeaderScene, ChartScene, GanttBarItem, GanttCommentItem
 from task_table import TaskTable, HeadcountDelegate, ModeDelegate, EfficiencyDelegate
 from chart_renderer import ChartRenderer
@@ -360,8 +360,12 @@ class GanttApp(QMainWindow):
         printer = QPrinter(QPrinter.ScreenResolution)
         printer.setPageOrientation(QPageLayout.Landscape)
         
-        preview_dlg = CustomPrintPreviewDialog(printer, lambda p: self.render_to_printer(p, sd, ed, selected_indices), self)
-        preview_dlg.exec()
+        preview = QPrintPreviewDialog(printer, self)
+        preview.setWindowTitle("印刷プレビュー")
+        preview.setWindowFlags(preview.windowFlags() | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint)
+        preview.paintRequested.connect(lambda p: self.render_to_printer(p, sd, ed, selected_indices))
+        preview.showMaximized()
+        preview.exec()
 
     def render_to_printer(self, printer, sd, ed, selected_indices):
         original_hidden = []
