@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (QDialog, QFormLayout, QDateEdit, QPushButton,
                                QVBoxLayout, QHBoxLayout, QScrollArea, QWidget, QLabel, 
                                QGridLayout, QTabWidget, QTableWidget, 
                                QAbstractItemView, QTableWidgetItem, QTextBrowser,
-                               QListWidget, QListWidgetItem, QDialogButtonBox, QComboBox)
+                               QListWidget, QListWidgetItem, QDialogButtonBox, QComboBox, QFileDialog, QMessageBox)
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QColor, QFont, QPageLayout
 from PySide6.QtPrintSupport import QPrinterInfo, QPrintPreviewWidget, QPageSetupDialog, QPrintDialog
@@ -345,7 +345,7 @@ class CustomPrintPreviewDialog(QDialog):
     def __init__(self, printer, render_func, parent=None):
         super().__init__(parent)
         self.setWindowTitle("印刷プレビュー・プリンター設定")
-        self.resize(1100, 800)
+        self.setWindowState(Qt.WindowMaximized)
         self.printer = printer
         self.render_func = render_func
         
@@ -368,11 +368,18 @@ class CustomPrintPreviewDialog(QDialog):
         ctrl_layout.addWidget(btn_page_setup)
         
         btn_fit_width = QPushButton("幅に合わせる")
+        btn_fit_height = QPushButton("高さに合わせる")
         btn_fit_page = QPushButton("ページ全体")
+        
         ctrl_layout.addWidget(btn_fit_width)
+        ctrl_layout.addWidget(btn_fit_height)
         ctrl_layout.addWidget(btn_fit_page)
         
         ctrl_layout.addStretch()
+
+        btn_pdf = QPushButton("📥 PDF出力")
+        btn_pdf.clicked.connect(self.export_pdf)
+        ctrl_layout.addWidget(btn_pdf)
         
         btn_print = QPushButton("🖨 印刷実行")
         btn_print.setStyleSheet("background-color: #0078d4; color: white; font-weight: bold; padding: 6px 15px;")
@@ -386,6 +393,7 @@ class CustomPrintPreviewDialog(QDialog):
         layout.addWidget(self.preview_widget)
         
         btn_fit_width.clicked.connect(lambda: self.preview_widget.fitToWidth())
+        btn_fit_height.clicked.connect(lambda: self.preview_widget.setZoomMode(QPrintPreviewWidget.FitToHeight) if hasattr(QPrintPreviewWidget, 'FitToHeight') else None)
         btn_fit_page.clicked.connect(lambda: self.preview_widget.fitInView())
         
     def change_printer(self):
@@ -398,6 +406,25 @@ class CustomPrintPreviewDialog(QDialog):
         dlg = QPageSetupDialog(self.printer, self)
         if dlg.exec():
             self.preview_widget.updatePreview()
+
+    def export_pdf(self):
+        filename, _ = QFileDialog.getSaveFileName(self, "PDFとして保存", "", "PDF Files (*.pdf)")
+        if filename:
+            original_printer_name = self.printer.printerName()
+            original_output_format = self.printer.outputFormat()
+            original_output_file = self.printer.outputFileName()
+
+            self.printer.setOutputFormat(QPrinter.PdfFormat)
+            self.printer.setOutputFileName(filename)
+            
+            self.render_func(self.printer)
+            
+            self.printer.setOutputFormat(original_output_format)
+            self.printer.setOutputFileName(original_output_file)
+            self.printer.setPrinterName(original_printer_name)
+            
+            QMessageBox.information(self, "成功", f"PDFを出力しました:\n{filename}")
+            self.accept()
             
     def direct_print(self):
         print_dlg = QPrintDialog(self.printer, self)
