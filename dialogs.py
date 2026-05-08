@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (QDialog, QFormLayout, QDateEdit, QPushButton,
                                QListWidget, QListWidgetItem, QDialogButtonBox, QComboBox, QFileDialog, QMessageBox)
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QColor, QFont, QPageLayout
-from PySide6.QtPrintSupport import QPrinterInfo, QPrintPreviewWidget, QPageSetupDialog, QPrintDialog
+from PySide6.QtPrintSupport import QPrinterInfo, QPrintPreviewWidget, QPageSetupDialog, QPrintDialog, QPrinter
 
 class SettingsDialog(QDialog):
     def __init__(self, parent=None):
