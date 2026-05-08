@@ -13,9 +13,9 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                QStyleOptionGraphicsItem, QGraphicsTextItem)
 from PySide6.QtCore import Qt, QTimer, QRectF, QPointF
 from PySide6.QtGui import QBrush, QPen, QColor, QFont, QIcon, QPainter, QPageLayout
-from PySide6.QtPrintSupport import QPrinter, QPrintDialog, QPrintPreviewDialog
+from PySide6.QtPrintSupport import QPrinter
 
-from dialogs import SettingsDialog, ColorGridDialog, SummaryDialog, HelpDialog, PrintSettingsDialog
+from dialogs import SettingsDialog, ColorGridDialog, SummaryDialog, HelpDialog, PrintSettingsDialog, CustomPrintPreviewDialog
 from gantt_items import HeaderScene, ChartScene, GanttBarItem, GanttCommentItem
 from task_table import TaskTable, HeadcountDelegate, ModeDelegate, EfficiencyDelegate
 from chart_renderer import ChartRenderer
@@ -337,8 +337,15 @@ class GanttApp(QMainWindow):
             QMessageBox.information(self, "情報", "印刷するタスクがありません。")
             return
             
-        current_display_end = self.min_date + timedelta(days=self.display_days - 1)
-        dlg = PrintSettingsDialog(self, self.visible_tasks_info, self.min_date, current_display_end)
+        scroll_val = self.chart_view.horizontalScrollBar().value()
+        days_scrolled = scroll_val / self.day_width if self.day_width > 0 else 0
+        visible_start = self.min_date + timedelta(days=days_scrolled)
+        
+        viewport_width = self.chart_view.viewport().width()
+        visible_days = viewport_width / self.day_width if self.day_width > 0 else 30
+        visible_end = visible_start + timedelta(days=visible_days - 1)
+        
+        dlg = PrintSettingsDialog(self, self.visible_tasks_info, visible_start, visible_end)
         if not dlg.exec():
             return
             
@@ -353,11 +360,8 @@ class GanttApp(QMainWindow):
         printer = QPrinter(QPrinter.ScreenResolution)
         printer.setPageOrientation(QPageLayout.Landscape)
         
-        preview = QPrintPreviewDialog(printer, self)
-        preview.setWindowTitle("印刷プレビュー")
-        preview.resize(1000, 800)
-        preview.paintRequested.connect(lambda p: self.render_to_printer(p, sd, ed, selected_indices))
-        preview.exec()
+        preview_dlg = CustomPrintPreviewDialog(printer, lambda p: self.render_to_printer(p, sd, ed, selected_indices), self)
+        preview_dlg.exec()
 
     def render_to_printer(self, printer, sd, ed, selected_indices):
         original_hidden = []
