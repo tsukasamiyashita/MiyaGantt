@@ -9,12 +9,14 @@ from datetime import datetime, timedelta
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                                QHBoxLayout, QPushButton, QTableWidgetItem, 
                                QSplitter, QGraphicsView, QMessageBox, 
-                               QFileDialog, QLabel, QSpinBox, QComboBox, QHeaderView, QTableWidget)
-from PySide6.QtCore import Qt, QTimer, QRectF
-from PySide6.QtGui import QBrush, QPen, QColor, QFont, QIcon, QPainter
+                               QFileDialog, QLabel, QSpinBox, QComboBox, QHeaderView, QTableWidget,
+                               QStyleOptionGraphicsItem, QGraphicsTextItem)
+from PySide6.QtCore import Qt, QTimer, QRectF, QPointF
+from PySide6.QtGui import QBrush, QPen, QColor, QFont, QIcon, QPainter, QPageLayout
+from PySide6.QtPrintSupport import QPrinter, QPrintDialog, QPrintPreviewDialog
 
-from dialogs import SettingsDialog, ColorGridDialog, SummaryDialog, HelpDialog
-from gantt_items import HeaderScene, ChartScene
+from dialogs import SettingsDialog, ColorGridDialog, SummaryDialog, HelpDialog, PrintSettingsDialog
+from gantt_items import HeaderScene, ChartScene, GanttBarItem, GanttCommentItem
 from task_table import TaskTable, HeadcountDelegate, ModeDelegate, EfficiencyDelegate
 from chart_renderer import ChartRenderer
 
@@ -176,12 +178,14 @@ class GanttApp(QMainWindow):
         self.btn_save = QPushButton("保存")
         self.btn_settings = QPushButton("⚙ 編集期間")
         self.btn_summary = QPushButton("📊 集計")
+        self.btn_print = QPushButton("🖨 印刷")
         self.btn_save_config = QPushButton("💾 設定保存")
         self.btn_help = QPushButton("❓ ヘルプ")
         self.btn_load.clicked.connect(self.load_data)
         self.btn_save.clicked.connect(self.save_data)
         self.btn_settings.clicked.connect(self.open_settings)
         self.btn_summary.clicked.connect(self.open_summary)
+        self.btn_print.clicked.connect(self.print_gantt)
         self.btn_save_config.clicked.connect(self.save_app_config)
         self.btn_help.clicked.connect(self.open_help)
         
@@ -189,6 +193,7 @@ class GanttApp(QMainWindow):
         tl.addWidget(self.btn_save)
         tl.addWidget(self.btn_settings)
         tl.addWidget(self.btn_summary)
+        tl.addWidget(self.btn_print)
         tl.addWidget(self.btn_save_config)
         tl.addWidget(self.btn_help)
         tl.addStretch()
@@ -326,6 +331,160 @@ class GanttApp(QMainWindow):
         self.chart_view.horizontalScrollBar().sliderReleased.connect(self.snap_horizontal_scroll)
         self.table.verticalScrollBar().valueChanged.connect(self.chart_view.verticalScrollBar().setValue)
         self.chart_view.verticalScrollBar().valueChanged.connect(self.table.verticalScrollBar().setValue)
+
+    def print_gantt(self):
+        if not self.visible_tasks_info:
+            QMessageBox.information(self, "情報", "印刷するタスクがありません。")
+            return
+            
+        current_display_end = self.min_date + timedelta(days=self.display_days - 1)
+        dlg = PrintSettingsDialog(self, self.visible_tasks_info, self.min_date, current_display_end)
+        if not dlg.exec():
+            return
+            
+        sd, ed, selected_indices = dlg.get_settings()
+        if sd > ed:
+            QMessageBox.warning(self, "エラー", "開始日が終了日より後になっています。")
+            return
+        if not selected_indices:
+            QMessageBox.warning(self, "エラー", "印刷対象の行が選択されていません。")
+            return
+
+        printer = QPrinter(QPrinter.ScreenResolution)
+        printer.setPageOrientation(QPageLayout.Landscape)
+        
+        preview = QPrintPreviewDialog(printer, self)
+        preview.setWindowTitle("印刷プレビュー")
+        preview.resize(1000, 800)
+        preview.paintRequested.connect(lambda p: self.render_to_printer(p, sd, ed, selected_indices))
+        preview.exec()
+
+    def render_to_printer(self, printer, sd, ed, selected_indices):
+        original_hidden = []
+        for r in range(len(self.visible_tasks_info)):
+            original_hidden.append(self.table.isRowHidden(r))
+            self.table.setRowHidden(r, r not in selected_indices)
+
+        days = (ed - sd).days + 1
+        start_offset_days = (sd - self.min_date).days
+        chart_start_x = start_offset_days * self.day_width
+        chart_width = days * self.day_width
+        
+        table_width = 0
+        for c in range(self.table.columnCount()):
+            if not self.table.isColumnHidden(c):
+                table_width += self.table.columnWidth(c)
+                
+        total_height = self.header_height + len(selected_indices) * self.row_height
+        
+        rect = printer.pageRect(QPrinter.DevicePixel)
+        painter = QPainter(printer)
+        
+        logical_width = table_width + chart_width
+        logical_height = total_height
+        
+        scale_x = rect.width() / logical_width if logical_width > 0 else 1.0
+        scale_y = rect.height() / logical_height if logical_height > 0 else 1.0
+        scale = min(scale_x, scale_y)
+        
+        painter.scale(scale, scale)
+        painter.fillRect(QRectF(0, 0, logical_width, logical_height), Qt.white)
+        
+        painter.save()
+        curr_x = 0
+        painter.setFont(QFont("Segoe UI", 9, QFont.Bold))
+        for c in range(self.table.columnCount()):
+            if not self.table.isColumnHidden(c):
+                cw = self.table.columnWidth(c)
+                header_rect = QRectF(curr_x, 0, cw, self.header_height)
+                painter.setPen(QPen(QColor(200, 200, 200), 1))
+                painter.drawRect(header_rect)
+                painter.setPen(Qt.black)
+                label = self.table.horizontalHeaderItem(c).text() if self.table.horizontalHeaderItem(c) else ""
+                painter.drawText(header_rect, Qt.AlignCenter | Qt.TextWordWrap, label)
+                curr_x += cw
+                
+        painter.setFont(QFont("Segoe UI", 9))
+        curr_y = self.header_height
+        for r in range(len(self.visible_tasks_info)):
+            if r in selected_indices:
+                curr_x = 0
+                for c in range(self.table.columnCount()):
+                    if not self.table.isColumnHidden(c):
+                        cw = self.table.columnWidth(c)
+                        cell_rect = QRectF(curr_x, curr_y, cw, self.row_height)
+                        painter.setPen(QPen(QColor(200, 200, 200), 1))
+                        painter.drawRect(cell_rect)
+                        painter.setPen(Qt.black)
+                        item = self.table.item(r, c)
+                        text = item.text() if item else ""
+                        if c == 2 and item:
+                            info = self.visible_tasks_info[r]
+                            indent = "  " * info.get('indent', 0)
+                            text = indent + text
+                        if item and item.background().color() != Qt.transparent:
+                            painter.fillRect(cell_rect.adjusted(1,1,-1,-1), item.background())
+                        painter.drawText(cell_rect.adjusted(4,0,-4,0), Qt.AlignLeft | Qt.AlignVCenter, text)
+                        curr_x += cw
+                curr_y += self.row_height
+        painter.restore()
+        
+        painter.save()
+        painter.translate(table_width, 0)
+        painter.setClipRect(QRectF(0, 0, chart_width, total_height))
+        
+        header_source_rect = QRectF(chart_start_x, 0, chart_width, self.header_height)
+        header_target_rect = QRectF(0, 0, chart_width, self.header_height)
+        self.hs.render(painter, header_target_rect, header_source_rect)
+        
+        curr_y = self.header_height
+        for r in range(len(self.visible_tasks_info)):
+            if r in selected_indices:
+                line_rect = QRectF(0, curr_y, chart_width, self.row_height)
+                painter.setPen(QColor(230, 230, 230))
+                painter.drawLine(line_rect.bottomLeft(), line_rect.bottomRight())
+                
+                for i in range(days):
+                    d = sd + timedelta(days=i)
+                    d_str = d.strftime("%Y-%m-%d")
+                    if d.weekday() >= 5 or jpholiday.is_holiday(d.date()) or d_str in self.custom_holidays:
+                        holiday_rect = QRectF(i * self.day_width, curr_y, self.day_width, self.row_height)
+                        painter.fillRect(holiday_rect, QColor(245, 245, 245))
+                        
+                painter.setPen(QPen(QColor(230, 230, 230), 1))
+                for i in range(days + 1):
+                    px = i * self.day_width
+                    painter.drawLine(QPointF(px, curr_y), QPointF(px, curr_y + self.row_height))
+                
+                scene_row_y = r * self.row_height
+                for item in self.cs.items():
+                    if isinstance(item, (GanttBarItem, GanttCommentItem)) and item.row == r:
+                        item_x = item.scenePos().x() - chart_start_x
+                        item_y = curr_y + (item.scenePos().y() - scene_row_y)
+                        if item_x + item.boundingRect().width() < 0 or item_x > chart_width:
+                            continue
+                        
+                        painter.save()
+                        painter.translate(item_x, item_y)
+                        opt = QStyleOptionGraphicsItem()
+                        item.paint(painter, opt)
+                        
+                        for child in item.childItems():
+                            if isinstance(child, QGraphicsTextItem):
+                                painter.save()
+                                painter.translate(child.pos())
+                                painter.setFont(child.font())
+                                painter.setPen(child.defaultTextColor())
+                                painter.drawText(child.boundingRect(), Qt.AlignLeft | Qt.AlignTop, child.toPlainText())
+                                painter.restore()
+                        painter.restore()
+                curr_y += self.row_height
+                
+        painter.restore()
+        painter.end()
+
+        for r, hidden in enumerate(original_hidden):
+            self.table.setRowHidden(r, hidden)
 
     def on_horizontal_scroll(self, v):
         self.hv.horizontalScrollBar().setValue(v)

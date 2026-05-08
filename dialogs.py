@@ -1,264 +1,266 @@
 # tsukasamiyashita/miyagantt/MiyaGantt-46a1664b6d1737cb32f1dd17429ce06cca8dc678/dialogs.py
-import os
-import sys
-import calendar
-from datetime import datetime, timedelta
-from PySide6.QtWidgets import (QDialog, QFormLayout, QDateEdit, QPushButton, 
-                               QVBoxLayout, QScrollArea, QWidget, QLabel, 
-                               QGridLayout, QTabWidget, QTableWidget, 
-                               QAbstractItemView, QTableWidgetItem, QTextBrowser)
+from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
+                               QDateEdit, QGridLayout, QPushButton, QTableWidget, 
+                               QTableWidgetItem, QHeaderView, QTextEdit, QListWidget, QListWidgetItem, QDialogButtonBox)
 from PySide6.QtCore import Qt, QDate
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QFont
+from datetime import datetime, timedelta
 
 class SettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("編集期間")
-        self.layout = QFormLayout(self)
+        self.setWindowTitle("カレンダー編集期間の設定")
         
-        self.start_date_edit = QDateEdit(self)
+        layout = QVBoxLayout(self)
+        
+        form_layout = QHBoxLayout()
+        self.start_date_edit = QDateEdit()
         self.start_date_edit.setCalendarPopup(True)
-        self.start_date_edit.setDate(parent.min_date.date() if parent else QDate.currentDate())
+        self.start_date_edit.setDate(QDate(parent.min_date.year, parent.min_date.month, parent.min_date.day))
         
-        self.end_date_edit = QDateEdit(self)
+        self.end_date_edit = QDateEdit()
         self.end_date_edit.setCalendarPopup(True)
-        if parent:
-            end_date = parent.min_date + timedelta(days=parent.display_days - 1)
-            self.end_date_edit.setDate(end_date.date())
+        if hasattr(parent, 'max_date') and parent.max_date:
+            self.end_date_edit.setDate(QDate(parent.max_date.year, parent.max_date.month, parent.max_date.day))
         else:
-            self.end_date_edit.setDate(QDate.currentDate().addDays(30))
+            display_days = parent.display_days if hasattr(parent, 'display_days') else 180
+            ed = parent.min_date + timedelta(days=display_days - 1)
+            self.end_date_edit.setDate(QDate(ed.year, ed.month, ed.day))
+            
+        form_layout.addWidget(QLabel("開始日:"))
+        form_layout.addWidget(self.start_date_edit)
+        form_layout.addWidget(QLabel("～ 終了日:"))
+        form_layout.addWidget(self.end_date_edit)
         
-        self.layout.addRow("開始日:", self.start_date_edit)
-        self.layout.addRow("終了日:", self.end_date_edit)
+        layout.addLayout(form_layout)
         
-        self.btn_ok = QPushButton("OK", self)
-        self.btn_ok.clicked.connect(self.accept)
-        self.layout.addRow(self.btn_ok)
+        btn_layout = QHBoxLayout()
+        btn_ok = QPushButton("OK")
+        btn_cancel = QPushButton("キャンセル")
+        btn_ok.clicked.connect(self.accept)
+        btn_cancel.clicked.connect(self.reject)
+        btn_layout.addWidget(btn_ok)
+        btn_layout.addWidget(btn_cancel)
+        
+        layout.addLayout(btn_layout)
 
 class ColorGridDialog(QDialog):
     def __init__(self, color_groups, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("色を選択")
+        self.setWindowTitle("色の選択")
         self.selected_color = None
         
-        main_layout = QVBoxLayout(self)
-        scroll = QScrollArea(self)
-        scroll.setWidgetResizable(True)
-        container = QWidget()
-        container_layout = QVBoxLayout(container)
+        layout = QVBoxLayout(self)
+        grid = QGridLayout()
+        grid.setSpacing(8)
         
+        row = 0
         for group_name, colors in color_groups:
-            group_label = QLabel(group_name)
-            group_label.setStyleSheet("font-weight: bold; margin-top: 10px; color: #555;")
-            container_layout.addWidget(group_label)
+            label = QLabel(group_name)
+            label.setFont(QFont("Segoe UI", 9, QFont.Bold))
+            grid.addWidget(label, row, 0, 1, 6)
+            row += 1
             
-            grid = QGridLayout()
-            grid.setSpacing(4)
-            cols = 4 
-            for i, (name, code) in enumerate(colors):
+            col = 0
+            for name, hex_code in colors:
                 btn = QPushButton()
-                btn.setFixedSize(80, 30)
+                btn.setFixedSize(30, 30)
+                btn.setStyleSheet(f"background-color: {hex_code}; border: 1px solid #999; border-radius: 4px;")
                 btn.setToolTip(name)
-                btn.setStyleSheet(f"background-color: {code}; border: 1px solid #ccc;")
-                btn.clicked.connect(lambda checked, c=code: self.select_color(c))
+                btn.clicked.connect(lambda checked, c=hex_code: self.select_color(c))
+                grid.addWidget(btn, row, col)
+                col += 1
+                if col > 5:
+                    col = 0
+                    row += 1
+            if col != 0:
+                row += 1
                 
-                grid.addWidget(btn, i // cols, i % cols)
-            container_layout.addLayout(grid)
-            
-        scroll.setWidget(container)
-        main_layout.addWidget(scroll)
+        layout.addLayout(grid)
         
-        self.resize(380, 500)
-
-    def select_color(self, color):
-        self.selected_color = color
+    def select_color(self, hex_code):
+        self.selected_color = hex_code
         self.accept()
 
 class SummaryDialog(QDialog):
-    def __init__(self, app, tasks, parent=None):
+    def __init__(self, parent=None, tasks=None, app=None):
         super().__init__(parent)
+        self.setWindowTitle("工数集計")
+        self.resize(600, 400)
+        self.tasks = tasks or []
         self.app = app
-        self.setWindowTitle("グループ別集計レポート")
-        self.resize(1000, 600)
-        self.tasks = tasks
         
         layout = QVBoxLayout(self)
-        self.tabs = QTabWidget(self)
         
-        self.weekly_table = QTableWidget()
-        self.monthly_table = QTableWidget()
-        self.yearly_table = QTableWidget()
+        self.table = QTableWidget(0, 3)
+        self.table.setHorizontalHeaderLabels(["色 / グループ", "名前", "合計工数"])
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.table.setColumnWidth(0, 120)
+        self.table.setColumnWidth(2, 100)
+        self.table.setEditTriggers(QTableWidget.NoEditTriggers)
+        layout.addWidget(self.table)
         
-        for table in [self.weekly_table, self.monthly_table, self.yearly_table]:
-            table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-            table.setAlternatingRowColors(True)
-            table.setStyleSheet("QTableWidget { background-color: #ffffff; gridline-color: #e0e0e0; }")
+        btn_close = QPushButton("閉じる")
+        btn_close.clicked.connect(self.accept)
+        layout.addWidget(btn_close)
         
-        self.tabs.addTab(self.weekly_table, "週間集計")
-        self.tabs.addTab(self.monthly_table, "月間集計")
-        self.tabs.addTab(self.yearly_table, "年間集計")
-        self.tabs.setCurrentIndex(1) 
+        self.calculate_summary()
         
-        layout.addWidget(self.tabs)
-        
-        close_btn = QPushButton("閉じる")
-        close_btn.clicked.connect(self.accept)
-        layout.addWidget(close_btn)
-        
-        self.refresh_data()
-
-    def refresh_data(self):
-        group_data = []
-        current_group_list = []
-        current_group_name = "未分類"
+    def calculate_summary(self):
+        summary = {}
         
         for t in self.tasks:
-            if t.get('is_group'):
-                if current_group_list:
-                    group_data.append({'name': current_group_name, 'tasks': current_group_list})
-                current_group_name = t.get('name', '無題グループ')
-                current_group_list = []
-            else:
-                current_group_list.append(t)
-        
-        if current_group_list:
-            group_data.append({'name': current_group_name, 'tasks': current_group_list})
+            if t.get('is_group') or t.get('mode') in ['auto', 'memo']:
+                continue
+                
+            hc = t.get('headcount', 1.0) * t.get('efficiency', 1.0)
+            t_color = t.get('color', '#0000ff')
             
-        if not group_data:
-            return
-
-        all_dates = []
-        for g in group_data:
-            for t in g['tasks']:
-                for p in t.get('periods', []):
-                    if p.get('start_date'): all_dates.append(datetime.strptime(p['start_date'], "%Y-%m-%d"))
-                    if p.get('end_date'): all_dates.append(datetime.strptime(p['end_date'], "%Y-%m-%d"))
-        
-        if not all_dates:
-            start_range = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-            end_range = start_range + timedelta(days=30)
-        else:
-            start_range = min(all_dates)
-            end_range = max(all_dates)
-
-        self.fill_table(self.weekly_table, group_data, start_range, end_range, 'week')
-        self.fill_table(self.monthly_table, group_data, start_range, end_range, 'month')
-        self.fill_table(self.yearly_table, group_data, start_range, end_range, 'year')
-
-    def fill_table(self, table, group_data, start_range, end_range, unit):
-        headers = []
-        curr = start_range
-        if unit == 'week':
-            curr = curr - timedelta(days=curr.weekday())
-            while curr <= end_range:
-                headers.append((curr, curr + timedelta(days=6), curr.strftime("%m/%d~")))
-                curr += timedelta(days=7)
-        elif unit == 'month':
-            curr = curr.replace(day=1)
-            while curr <= end_range:
-                last_day = calendar.monthrange(curr.year, curr.month)[1]
-                headers.append((curr, curr.replace(day=last_day), curr.strftime("%Y/%m")))
-                m = curr.month + 1
-                y = curr.year
-                if m > 12: m = 1; y += 1
-                curr = datetime(y, m, 1)
-        elif unit == 'year':
-            curr = curr.replace(month=1, day=1)
-            while curr <= end_range:
-                headers.append((curr, curr.replace(month=12, day=31), curr.strftime("%Y年")))
-                curr = curr.replace(year=curr.year + 1)
-
-        table.setColumnCount(len(headers) + 1)
-        table.setRowCount(len(group_data) + 1)
-        table.setHorizontalHeaderLabels(["グループ名"] + [h[2] for h in headers])
-        
-        total_period_maps = [{} for _ in range(len(headers))]
-        
-        for r, g in enumerate(group_data):
-            table.setItem(r, 0, QTableWidgetItem(g['name']))
-            for c, (h_start, h_end, label) in enumerate(headers):
-                color_map = {}
-                for t in g['tasks']:
-                    if t.get('mode') in ['auto', 'memo']:
-                        continue
-                    t_color = t.get('color', '#0000ff')
-                    hc = float(t.get('headcount', 1.0)) * float(t.get('efficiency', 1.0))
-
-                    for p in t.get('periods', []):
-                        if not p.get('start_date') or not p.get('end_date'): continue
-                        try:
-                            psd = datetime.strptime(p['start_date'], "%Y-%m-%d")
-                            ped = datetime.strptime(p['end_date'], "%Y-%m-%d")
-                            calc_start = max(psd, h_start)
-                            calc_end = min(ped, h_end)
-                            if calc_start <= calc_end:
-                                overlap = (calc_end - calc_start).days + 1
-                                if overlap > 0:
-                                    p_color = p.get('color')
-                                    if p_color and p_color.lower() != t_color.lower():
-                                        continue
-                                    val = overlap * hc
-                                    color_map[t_color] = color_map.get(t_color, 0) + val
-                                    total_period_maps[c][t_color] = total_period_maps[c].get(t_color, 0) + val
-                        except ValueError:
-                            pass
+            for p in t.get('periods', []):
+                if not p.get('start_date') or not p.get('end_date'): continue
                 
-                if not color_map:
-                    item = QTableWidgetItem("-")
-                else:
-                    text = self.app.format_summary_workload(color_map)
-                    item = QTableWidgetItem(text)
-                
-                item.setTextAlignment(Qt.AlignCenter)
-                if color_map:
-                    item.setForeground(QColor(0, 0, 255))
-                    f = item.font(); f.setBold(True); item.setFont(f)
-                table.setItem(r, c + 1, item)
-        
-        total_row_idx = len(group_data)
-        total_label_item = QTableWidgetItem("全体合計")
-        total_label_item.setBackground(QColor(240, 248, 255))
-        f = total_label_item.font(); f.setBold(True); total_label_item.setFont(f)
-        table.setItem(total_row_idx, 0, total_label_item)
-        
-        for c, color_map in enumerate(total_period_maps):
-            text = self.app.format_summary_workload(color_map) if color_map else "-"
-            item = QTableWidgetItem(text)
-            item.setTextAlignment(Qt.AlignCenter)
-            item.setBackground(QColor(240, 248, 255))
-            f = item.font(); f.setBold(True); item.setFont(f)
-            table.setItem(total_row_idx, c + 1, item)
-        
-        table.resizeColumnsToContents()
+                try:
+                    sd = datetime.strptime(p['start_date'], "%Y-%m-%d")
+                    ed = datetime.strptime(p['end_date'], "%Y-%m-%d")
+                    days = (ed - sd).days + 1
+                    
+                    if days > 0:
+                        c = p.get('color')
+                        if c and c.lower() != t_color.lower():
+                            continue
+                        summary[t_color] = summary.get(t_color, 0) + (days * hc)
+                except ValueError:
+                    pass
+                    
+        self.table.setRowCount(len(summary))
+        for row, (color_code, total) in enumerate(summary.items()):
+            color_name = self.app.get_color_name(color_code) if self.app else color_code
+            
+            item_c = QTableWidgetItem(color_code)
+            item_c.setBackground(QColor(color_code))
+            item_c.setForeground(Qt.white if QColor(color_code).lightness() < 128 else Qt.black)
+            
+            item_n = QTableWidgetItem(color_name)
+            item_v = QTableWidgetItem(f"{total:g} 工数")
+            item_v.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            
+            self.table.setItem(row, 0, item_c)
+            self.table.setItem(row, 1, item_n)
+            self.table.setItem(row, 2, item_v)
 
 class HelpDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("ヘルプ - MiyaGantt")
-        self.resize(850, 650)
+        self.setWindowTitle("ヘルプ・使い方")
+        self.resize(700, 500)
+        
         layout = QVBoxLayout(self)
         
-        self.browser = QTextBrowser()
-        self.browser.setOpenExternalLinks(True) 
+        text = QTextEdit()
+        text.setReadOnly(True)
+        text.setHtml("""
+        <h2>MiyaGantt 使い方ガイド</h2>
         
-        readme_path = self.get_readme_path()
-        if os.path.exists(readme_path):
-            try:
-                with open(readme_path, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                self.browser.setMarkdown(content)
-            except Exception as e:
-                self.browser.setText(f"README.md の読み込みに失敗しました: {e}")
-        else:
-            self.browser.setText(f"README.md が見つかりませんでした。\n検索パス: {readme_path}")
-            
-        layout.addWidget(self.browser)
+        <h3>1. 基本的な操作</h3>
+        <ul>
+            <li><b>タスク追加:</b> ツールバーの「追加」ボタンで新規タスクを作成します。</li>
+            <li><b>モードの選択:</b> 追加時にデフォルト設定から「人員(手動)」「案件(自動)」「メモ」を選べます。追加後もテーブルから変更可能です。</li>
+            <li><b>期間の描画:</b> チャート上の空いている領域をドラッグすると、期間（バー）を簡単に作成できます。</li>
+            <li><b>バーの移動・伸縮:</b> バーの端をドラッグで伸縮、中央をドラッグで移動できます。</li>
+        </ul>
+        
+        <h3>2. 各モードの特徴</h3>
+        <ul>
+            <li><b>👤 人員モード (手動):</b> 人を中心としたスケジュール管理。指定した人数のリソースを提供します。バーの色を変えることで、案件モードの特定タスクにリソースを紐付けられます。</li>
+            <li><b>⚡ 案件モード (自動):</b> 案件（タスク）中心の管理。開始日と必要な「合計工数」を設定すると、同じ色の「人員モード」で確保されたリソースを自動的に消化し、バーが自動描画されます。</li>
+            <li><b>📝 メモモード:</b> 工数計算に影響を与えない、純粋なスケジュールやメモを表示します。</li>
+        </ul>
+        
+        <h3>3. その他の便利機能</h3>
+        <ul>
+            <li><b>休日の設定:</b> カレンダーのヘッダー（日付部分）をクリックすると、その日を休日に設定・解除できます。</li>
+            <li><b>色による紐付け:</b> 人員モードのバーの色と、案件モードのタスクの色を同じにすることで、自動的にリソースが割り当てられます。テーブルの「色」列をダブルクリック、またはバーを右クリックして変更できます。</li>
+            <li><b>コメント:</b> チャート上を右クリックして「コメントを追加」できます。</li>
+        </ul>
+        """)
+        
+        layout.addWidget(text)
         
         btn_close = QPushButton("閉じる")
         btn_close.clicked.connect(self.accept)
         layout.addWidget(btn_close)
 
-    def get_readme_path(self):
-        if hasattr(sys, '_MEIPASS'):
-            return os.path.join(sys._MEIPASS, 'README.md')
-        return os.path.join(os.path.dirname(os.path.abspath(__file__)), 'README.md')
+class PrintSettingsDialog(QDialog):
+    def __init__(self, parent=None, tasks_info=None, min_date=None, max_date=None):
+        super().__init__(parent)
+        self.setWindowTitle("印刷設定")
+        self.resize(400, 500)
+        self.tasks_info = tasks_info or []
+        
+        layout = QVBoxLayout(self)
+        
+        # 期間設定
+        date_layout = QHBoxLayout()
+        self.start_date_edit = QDateEdit()
+        self.start_date_edit.setCalendarPopup(True)
+        if min_date:
+            self.start_date_edit.setDate(QDate(min_date.year, min_date.month, min_date.day))
+            
+        self.end_date_edit = QDateEdit()
+        self.end_date_edit.setCalendarPopup(True)
+        if max_date:
+            self.end_date_edit.setDate(QDate(max_date.year, max_date.month, max_date.day))
+            
+        date_layout.addWidget(QLabel("印刷期間:"))
+        date_layout.addWidget(self.start_date_edit)
+        date_layout.addWidget(QLabel("～"))
+        date_layout.addWidget(self.end_date_edit)
+        layout.addLayout(date_layout)
+        
+        # タスク選択
+        layout.addWidget(QLabel("印刷対象の行:"))
+        self.task_list = QListWidget()
+        for i, info in enumerate(self.tasks_info):
+            t = info['task']
+            name = t.get('name', '無題')
+            indent = "  " * info.get('indent', 0)
+            item = QListWidgetItem(f"{indent}{name}")
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            # 現在の表示状態を初期値にする
+            is_hidden = parent.table.isRowHidden(i) if parent and hasattr(parent, 'table') else False
+            item.setCheckState(Qt.Unchecked if is_hidden else Qt.Checked)
+            item.setData(Qt.UserRole, i)
+            self.task_list.addItem(item)
+        layout.addWidget(self.task_list)
+        
+        # 全選択/全解除
+        btn_layout = QHBoxLayout()
+        btn_all = QPushButton("全選択")
+        btn_clear = QPushButton("全解除")
+        btn_all.clicked.connect(lambda: self.set_all_checked(Qt.Checked))
+        btn_clear.clicked.connect(lambda: self.set_all_checked(Qt.Unchecked))
+        btn_layout.addWidget(btn_all)
+        btn_layout.addWidget(btn_clear)
+        layout.addLayout(btn_layout)
+        
+        # ボタン
+        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        button_box.accepted.connect(self.accept)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+        
+    def set_all_checked(self, state):
+        for i in range(self.task_list.count()):
+            self.task_list.item(i).setCheckState(state)
+            
+    def get_settings(self):
+        sd_qdate = self.start_date_edit.date()
+        ed_qdate = self.end_date_edit.date()
+        sd = datetime(sd_qdate.year(), sd_qdate.month(), sd_qdate.day())
+        ed = datetime(ed_qdate.year(), ed_qdate.month(), ed_qdate.day())
+        selected_indices = []
+        for i in range(self.task_list.count()):
+            item = self.task_list.item(i)
+            if item.checkState() == Qt.Checked:
+                selected_indices.append(item.data(Qt.UserRole))
+        return sd, ed, selected_indices
