@@ -105,11 +105,16 @@ class GanttBarItem(QGraphicsRectItem):
             
             h = self.rect().height()
             
+            sd_str = sd.strftime("%Y-%m-%d")
+            cumulative_val = sum(v for k, v in allocs.items() if k < sd_str)
+            
             for i in range(days):
                 d_str = (sd + timedelta(days=i)).strftime("%Y-%m-%d")
                 val = allocs.get(d_str, 0.0)
                 if val > 0.001:
-                    text = f"{val:g}工数" if dw >= 40 else f"{val:g}"
+                    cumulative_val += val
+                    disp_val = round(cumulative_val, 2)
+                    text = f"{disp_val:g}工数" if dw >= 40 else f"{disp_val:g}"
                     rx = self.rect().left() + i * dw
                     t_rect = QRectF(rx, self.rect().top(), dw, h)
                     painter.drawText(t_rect, Qt.AlignCenter, text)
