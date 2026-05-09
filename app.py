@@ -200,7 +200,12 @@ class GanttApp(QMainWindow):
         tl.addWidget(self.zoom_count_spin)
         
         self.btn_load = QPushButton("読込")
-        self.btn_save = QPushButton("保存")
+        self.btn_save = QPushButton("上書き保存")
+        self.btn_save_as = QPushButton("名前を付けて保存")
+        self.btn_save.setShortcut("Ctrl+S")
+        self.btn_save_as.setShortcut("Ctrl+Shift+S")
+        self.btn_save.setToolTip("上書き保存 (Ctrl+S)")
+        self.btn_save_as.setToolTip("名前を付けて保存 (Ctrl+Shift+S)")
         self.btn_settings = QPushButton("⚙ 編集期間")
         self.btn_summary = QPushButton("📊 集計")
         self.btn_print = QPushButton("🖨 印刷")
@@ -208,6 +213,7 @@ class GanttApp(QMainWindow):
         self.btn_help = QPushButton("❓ ヘルプ")
         self.btn_load.clicked.connect(self.load_data)
         self.btn_save.clicked.connect(self.save_data)
+        self.btn_save_as.clicked.connect(self.save_data_as)
         self.btn_settings.clicked.connect(self.open_settings)
         self.btn_summary.clicked.connect(self.open_summary)
         self.btn_print.clicked.connect(self.print_gantt)
@@ -216,6 +222,7 @@ class GanttApp(QMainWindow):
         
         tl.addWidget(self.btn_load)
         tl.addWidget(self.btn_save)
+        tl.addWidget(self.btn_save_as)
         tl.addWidget(self.btn_settings)
         tl.addWidget(self.btn_summary)
         tl.addWidget(self.btn_print)
@@ -1515,29 +1522,38 @@ class GanttApp(QMainWindow):
         return os.path.join(os.path.dirname(os.path.abspath(__file__)), 'icon.ico')
 
     def save_data(self):
+        if self.last_path:
+            self._perform_save(self.last_path)
+        else:
+            self.save_data_as()
+
+    def save_data_as(self):
         initial_dir = os.path.dirname(self.last_path) if self.last_path and os.path.exists(os.path.dirname(self.last_path)) else ""
-        p = QFileDialog.getSaveFileName(self, "保存", initial_dir, "JSON (*.json)")[0]
+        p = QFileDialog.getSaveFileName(self, "名前を付けて保存", initial_dir, "JSON (*.json)")[0]
         if p:
             self.last_path = p
-            try:
-                data_to_save = {
-                    "project_title": self.project_title,
-                    "settings": {
-                        "min_date": self.min_date.strftime("%Y-%m-%d"),
-                        "max_date": self.max_date.strftime("%Y-%m-%d") if hasattr(self, 'max_date') else None,
-                        "display_unit": self.display_unit,
-                        "display_count": self.display_count,
-                        "zoom_unit": self.zoom_unit,
-                        "zoom_count": self.zoom_count,
-                        "custom_holidays": self.custom_holidays
-                    },
-                    "tasks": self.tasks
-                }
-                with open(p, 'w', encoding='utf-8') as f:
-                    json.dump(data_to_save, f, ensure_ascii=False, indent=4)
-                QMessageBox.information(self, "成功", "保存しました。")
-            except Exception as e:
-                QMessageBox.critical(self, "エラー", f"保存失敗: {e}")
+            self._perform_save(p)
+
+    def _perform_save(self, path):
+        try:
+            data_to_save = {
+                "project_title": self.project_title,
+                "settings": {
+                    "min_date": self.min_date.strftime("%Y-%m-%d"),
+                    "max_date": self.max_date.strftime("%Y-%m-%d") if hasattr(self, 'max_date') else None,
+                    "display_unit": self.display_unit,
+                    "display_count": self.display_count,
+                    "zoom_unit": self.zoom_unit,
+                    "zoom_count": self.zoom_count,
+                    "custom_holidays": self.custom_holidays
+                },
+                "tasks": self.tasks
+            }
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(data_to_save, f, ensure_ascii=False, indent=4)
+            self.statusBar().showMessage(f"保存しました: {os.path.basename(path)}", 5000)
+        except Exception as e:
+            QMessageBox.critical(self, "エラー", f"保存失敗: {e}")
 
     def get_color_groups(self):
         return [
