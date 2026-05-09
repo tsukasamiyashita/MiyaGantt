@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                QFileDialog, QLabel, QSpinBox, QComboBox, QHeaderView, QTableWidget,
                                QStyleOptionGraphicsItem, QGraphicsTextItem, QLineEdit)
 from PySide6.QtCore import Qt, QTimer, QRectF, QPointF
-from PySide6.QtGui import QBrush, QPen, QColor, QFont, QIcon, QPainter, QPageLayout
+from PySide6.QtGui import QBrush, QPen, QColor, QFont, QIcon, QPainter, QPageLayout, QAction
 from PySide6.QtPrintSupport import QPrinter, QPrintPreviewDialog
 
 from dialogs import SettingsDialog, ColorGridDialog, SummaryDialog, HelpDialog, PrintSettingsDialog
@@ -400,6 +400,46 @@ class GanttApp(QMainWindow):
         preview = QPrintPreviewDialog(printer, self)
         preview.setWindowTitle("印刷プレビュー")
         preview.setWindowFlags(preview.windowFlags() | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint)
+        
+        translations = {
+            "print...": "印刷...",
+            "print": "印刷",
+            "fit width": "幅に合わせる",
+            "fit to width": "幅に合わせる",
+            "fit page": "ページに合わせる",
+            "fit to page": "ページに合わせる",
+            "zoom in": "拡大",
+            "zoom out": "縮小",
+            "portrait": "縦向き",
+            "landscape": "横向き",
+            "first page": "最初のページ",
+            "previous page": "前のページ",
+            "next page": "次のページ",
+            "last page": "最後のページ",
+            "show overview of all pages": "全ページ表示",
+            "show single page": "単一ページ表示",
+            "show facing pages": "見開き表示",
+            "page setup...": "ページ設定...",
+            "page setup": "ページ設定",
+            "export to pdf...": "PDFへエクスポート...",
+            "export to pdf": "PDFへエクスポート"
+        }
+        
+        for action in preview.findChildren(QAction):
+            text = action.text().replace("&", "").strip().lower()
+            tooltip = action.toolTip().strip()
+            tooltip_lower = tooltip.lower()
+            
+            tooltip_clean = tooltip_lower.split(" (")[0].strip()
+            
+            if tooltip_clean in translations:
+                shortcut_part = tooltip[len(tooltip_clean):] 
+                action.setText(translations[tooltip_clean])
+                action.setToolTip(translations[tooltip_clean] + shortcut_part)
+            elif text in translations:
+                action.setText(translations[text])
+                action.setToolTip(translations[text])
+
         preview.paintRequested.connect(lambda p: self.render_to_printer(p, sd, ed, selected_indices))
         preview.showMaximized()
         preview.exec()
