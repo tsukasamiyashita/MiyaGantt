@@ -827,7 +827,7 @@ class GanttApp(QMainWindow):
             for t in tasks:
                 if t.get('mode', 'manual') == 'manual':
                     hc = float(t.get('headcount', 1.0)) * float(t.get('efficiency', 1.0))
-                    t_color = t.get('color', '#008000')
+                    t_color = t.get('color', '#808080')
                     for p in t.get('periods', []):
                         if not p.get('start_date') or not p.get('end_date'): continue
                         
@@ -970,13 +970,13 @@ class GanttApp(QMainWindow):
         mode_idx = self.mode_combo.currentIndex()
         if mode_idx == 0: 
             mode = "manual"
-            color = "#008000"
+            color = "#808080"
         elif mode_idx == 1: 
             mode = "auto"
-            color = "#0000ff"
+            color = "#323130"
         else: 
             mode = "memo"
-            color = "#808080"
+            color = "#c0c0c0"
         
         t = {
             "name": f"新規タスク {len(self.tasks)+1}",
@@ -1179,7 +1179,7 @@ class GanttApp(QMainWindow):
             if task.get('mode') in ['auto', 'memo']:
                 continue
                 
-            t_color = task.get('color', '#0000ff')
+            t_color = task.get('color', '#808080')
             hc = task.get('headcount', 1.0) * task.get('efficiency', 1.0)
                 
             for p in task.get('periods', []):
@@ -1256,13 +1256,13 @@ class GanttApp(QMainWindow):
         mode_idx = self.mode_combo.currentIndex()
         if mode_idx == 0: 
             mode = "manual"
-            color = "#008000"
+            color = "#808080"
         elif mode_idx == 1: 
             mode = "auto"
-            color = "#0000ff"
+            color = "#323130"
         else: 
             mode = "memo"
-            color = "#808080"
+            color = "#c0c0c0"
         
         t = {
             "name": f"新規 {len(self.tasks)+1}", 
@@ -1319,11 +1319,11 @@ class GanttApp(QMainWindow):
                 t['mode'] = new_mode_en
                 
                 if new_mode_en == 'auto':
-                    new_color = '#0000ff'
+                    new_color = '#323130'
                 elif new_mode_en == 'memo':
-                    new_color = '#808080'
+                    new_color = '#c0c0c0'
                 else:
-                    new_color = '#008000'
+                    new_color = '#808080'
                 t['color'] = new_color
                 
                 if new_mode_en == 'auto':
