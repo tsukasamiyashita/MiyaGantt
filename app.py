@@ -387,12 +387,15 @@ class GanttApp(QMainWindow):
         if not dlg.exec():
             return
             
-        sd, ed, selected_indices = dlg.get_settings()
+        sd, ed, selected_row_indices, selected_col_indices = dlg.get_settings()
         if sd > ed:
             QMessageBox.warning(self, "エラー", "開始日が終了日より後になっています。")
             return
-        if not selected_indices:
+        if not selected_row_indices:
             QMessageBox.warning(self, "エラー", "印刷対象の行が選択されていません。")
+            return
+        if not selected_col_indices:
+            QMessageBox.warning(self, "エラー", "印刷対象の列が選択されていません。")
             return
 
         printer = QPrinter(QPrinter.ScreenResolution)
@@ -441,15 +444,20 @@ class GanttApp(QMainWindow):
                 action.setText(translations[text])
                 action.setToolTip(translations[text])
 
-        preview.paintRequested.connect(lambda p: self.render_to_printer(p, sd, ed, selected_indices))
+        preview.paintRequested.connect(lambda p: self.render_to_printer(p, sd, ed, selected_row_indices, selected_col_indices))
         preview.showMaximized()
         preview.exec()
 
-    def render_to_printer(self, printer, sd, ed, selected_indices):
-        original_hidden = []
+    def render_to_printer(self, printer, sd, ed, selected_row_indices, selected_col_indices):
+        original_row_hidden = []
         for r in range(len(self.visible_tasks_info)):
-            original_hidden.append(self.table.isRowHidden(r))
-            self.table.setRowHidden(r, r not in selected_indices)
+            original_row_hidden.append(self.table.isRowHidden(r))
+            self.table.setRowHidden(r, r not in selected_row_indices)
+
+        original_col_hidden = []
+        for c in range(self.table.columnCount()):
+            original_col_hidden.append(self.table.isColumnHidden(c))
+            self.table.setColumnHidden(c, c not in selected_col_indices)
 
         days = (ed - sd).days + 1
         start_offset_days = (sd - self.min_date).days
@@ -462,7 +470,7 @@ class GanttApp(QMainWindow):
                 table_width += self.table.columnWidth(c)
                 
         title_height = 50 if getattr(self, 'project_title', '') else 0
-        total_height = title_height + self.header_height + len(selected_indices) * self.row_height
+        total_height = title_height + self.header_height + len(selected_row_indices) * self.row_height
         
         rect = printer.pageRect(QPrinter.DevicePixel)
         painter = QPainter(printer)
@@ -502,7 +510,7 @@ class GanttApp(QMainWindow):
         painter.setFont(QFont("Segoe UI", 9))
         curr_y = self.header_height
         for r in range(len(self.visible_tasks_info)):
-            if r in selected_indices:
+            if r in selected_row_indices:
                 curr_x = 0
                 for c in range(self.table.columnCount()):
                     if not self.table.isColumnHidden(c):
@@ -534,7 +542,7 @@ class GanttApp(QMainWindow):
         
         curr_y = self.header_height
         for r in range(len(self.visible_tasks_info)):
-            if r in selected_indices:
+            if r in selected_row_indices:
                 line_rect = QRectF(0, curr_y, chart_width, self.row_height)
                 painter.setPen(QColor(230, 230, 230))
                 painter.drawLine(line_rect.bottomLeft(), line_rect.bottomRight())
@@ -578,8 +586,10 @@ class GanttApp(QMainWindow):
         painter.restore()
         painter.end()
 
-        for r, hidden in enumerate(original_hidden):
+        for r, hidden in enumerate(original_row_hidden):
             self.table.setRowHidden(r, hidden)
+        for c, hidden in enumerate(original_col_hidden):
+            self.table.setColumnHidden(c, hidden)
 
     def on_horizontal_scroll(self, v):
         self.hv.horizontalScrollBar().setValue(v)

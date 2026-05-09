@@ -269,8 +269,9 @@ class PrintSettingsDialog(QDialog):
     def __init__(self, parent=None, tasks_info=None, min_date=None, max_date=None):
         super().__init__(parent)
         self.setWindowTitle("印刷対象の設定")
-        self.resize(400, 500)
+        self.resize(600, 500)
         self.tasks_info = tasks_info or []
+        self.parent_table = parent.table if parent and hasattr(parent, 'table') else None
         
         layout = QVBoxLayout(self)
         
@@ -292,8 +293,12 @@ class PrintSettingsDialog(QDialog):
         date_layout.addWidget(self.end_date_edit)
         layout.addLayout(date_layout)
         
-        # タスク選択
-        layout.addWidget(QLabel("印刷対象の行:"))
+        # 行と列のリストを横に並べるためのレイアウト
+        lists_layout = QHBoxLayout()
+        
+        # タスク(行)選択
+        row_layout = QVBoxLayout()
+        row_layout.addWidget(QLabel("印刷対象の行:"))
         self.task_list = QListWidget()
         for i, info in enumerate(self.tasks_info):
             t = info['task']
@@ -301,21 +306,55 @@ class PrintSettingsDialog(QDialog):
             indent = "  " * info.get('indent', 0)
             item = QListWidgetItem(f"{indent}{name}")
             item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-            is_hidden = parent.table.isRowHidden(i) if parent and hasattr(parent, 'table') else False
+            is_hidden = self.parent_table.isRowHidden(i) if self.parent_table else False
             item.setCheckState(Qt.Unchecked if is_hidden else Qt.Checked)
             item.setData(Qt.UserRole, i)
             self.task_list.addItem(item)
-        layout.addWidget(self.task_list)
+        row_layout.addWidget(self.task_list)
         
-        # 全選択/全解除
-        btn_layout = QHBoxLayout()
-        btn_all = QPushButton("全選択")
-        btn_clear = QPushButton("全解除")
-        btn_all.clicked.connect(lambda: self.set_all_checked(Qt.Checked))
-        btn_clear.clicked.connect(lambda: self.set_all_checked(Qt.Unchecked))
-        btn_layout.addWidget(btn_all)
-        btn_layout.addWidget(btn_clear)
-        layout.addLayout(btn_layout)
+        btn_row_layout = QHBoxLayout()
+        btn_row_all = QPushButton("全選択")
+        btn_row_clear = QPushButton("全解除")
+        btn_row_all.clicked.connect(lambda: self.set_all_checked(self.task_list, Qt.Checked))
+        btn_row_clear.clicked.connect(lambda: self.set_all_checked(self.task_list, Qt.Unchecked))
+        btn_row_layout.addWidget(btn_row_all)
+        btn_row_layout.addWidget(btn_row_clear)
+        row_layout.addLayout(btn_row_layout)
+        
+        lists_layout.addLayout(row_layout)
+        
+        # 列選択
+        col_layout = QVBoxLayout()
+        col_layout.addWidget(QLabel("印刷対象の列:"))
+        self.col_list = QListWidget()
+        if self.parent_table:
+            for i in range(self.parent_table.columnCount()):
+                header_item = self.parent_table.horizontalHeaderItem(i)
+                header_text = header_item.text().strip() if header_item and header_item.text().strip() else ""
+                if not header_text:
+                    if i == 0: header_text = "選択マーク"
+                    elif i == 1: header_text = "開閉ボタン"
+                    else: header_text = f"列 {i}"
+                    
+                item = QListWidgetItem(header_text)
+                item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+                is_hidden = self.parent_table.isColumnHidden(i)
+                item.setCheckState(Qt.Unchecked if is_hidden else Qt.Checked)
+                item.setData(Qt.UserRole, i)
+                self.col_list.addItem(item)
+        col_layout.addWidget(self.col_list)
+        
+        btn_col_layout = QHBoxLayout()
+        btn_col_all = QPushButton("全選択")
+        btn_col_clear = QPushButton("全解除")
+        btn_col_all.clicked.connect(lambda: self.set_all_checked(self.col_list, Qt.Checked))
+        btn_col_clear.clicked.connect(lambda: self.set_all_checked(self.col_list, Qt.Unchecked))
+        btn_col_layout.addWidget(btn_col_all)
+        btn_col_layout.addWidget(btn_col_clear)
+        col_layout.addLayout(btn_col_layout)
+        
+        lists_layout.addLayout(col_layout)
+        layout.addLayout(lists_layout)
         
         # ボタン
         button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -323,9 +362,9 @@ class PrintSettingsDialog(QDialog):
         button_box.rejected.connect(self.reject)
         layout.addWidget(button_box)
         
-    def set_all_checked(self, state):
-        for i in range(self.task_list.count()):
-            self.task_list.item(i).setCheckState(state)
+    def set_all_checked(self, list_widget, state):
+        for i in range(list_widget.count()):
+            list_widget.item(i).setCheckState(state)
             
     def get_settings(self):
         sd_qdate = self.start_date_edit.date()
@@ -333,13 +372,19 @@ class PrintSettingsDialog(QDialog):
         sd = datetime(sd_qdate.year(), sd_qdate.month(), sd_qdate.day())
         ed = datetime(ed_qdate.year(), ed_qdate.month(), ed_qdate.day())
         
-        selected_indices = []
+        selected_row_indices = []
         for i in range(self.task_list.count()):
             item = self.task_list.item(i)
             if item.checkState() == Qt.Checked:
-                selected_indices.append(item.data(Qt.UserRole))
+                selected_row_indices.append(item.data(Qt.UserRole))
                 
-        return sd, ed, selected_indices
+        selected_col_indices = []
+        for i in range(self.col_list.count()):
+            item = self.col_list.item(i)
+            if item.checkState() == Qt.Checked:
+                selected_col_indices.append(item.data(Qt.UserRole))
+                
+        return sd, ed, selected_row_indices, selected_col_indices
 
 class CustomPrintPreviewDialog(QDialog):
     def __init__(self, printer, render_func, parent=None):
