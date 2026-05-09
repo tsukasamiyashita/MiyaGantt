@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                QHBoxLayout, QPushButton, QTableWidgetItem, 
                                QSplitter, QGraphicsView, QMessageBox, 
                                QFileDialog, QLabel, QSpinBox, QComboBox, QHeaderView, QTableWidget,
-                               QStyleOptionGraphicsItem, QGraphicsTextItem, QLineEdit)
+                               QStyleOptionGraphicsItem, QGraphicsTextItem, QLineEdit, QAbstractItemView)
 from PySide6.QtCore import Qt, QTimer, QRectF, QPointF
 from PySide6.QtGui import QBrush, QPen, QColor, QFont, QIcon, QPainter, QPageLayout, QAction
 from PySide6.QtPrintSupport import QPrinter, QPrintPreviewDialog
@@ -317,6 +317,7 @@ class GanttApp(QMainWindow):
         self.table.verticalHeader().setDefaultSectionSize(self.row_height)
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.table.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
         self.table.setItemDelegateForColumn(5, EfficiencyDelegate(self.table))
         self.table.setItemDelegateForColumn(4, HeadcountDelegate(self.table))
         self.table.setItemDelegateForColumn(3, ModeDelegate(self.table))
@@ -1802,7 +1803,7 @@ class GanttApp(QMainWindow):
     def _perform_save(self, path):
         try:
             data_to_save = {
-                "project_title": self.project_title,
+                "project_title": getattr(self, 'project_title', ""),
                 "settings": {
                     "min_date": self.min_date.strftime("%Y-%m-%d"),
                     "max_date": self.max_date.strftime("%Y-%m-%d") if hasattr(self, 'max_date') else None,
