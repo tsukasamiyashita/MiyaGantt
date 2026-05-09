@@ -1,4 +1,4 @@
-# tsukasamiyashita/miyagantt/MiyaGantt-46a1664b6d1737cb32f1dd17429ce06cca8dc678/task_table.py
+# tsukasamiyashita/miyagantt/MiyaGantt-1a6c11418aab8039a1925b8c6a4964664b5c77ae/task_table.py
 from PySide6.QtWidgets import QHeaderView, QTableWidget, QMenu, QStyledItemDelegate, QComboBox
 from PySide6.QtCore import Qt, QTimer
 
@@ -6,7 +6,7 @@ class EfficiencyDelegate(QStyledItemDelegate):
     def createEditor(self, parent, option, index):
         mode_text = index.model().data(index.siblingAtColumn(3), Qt.DisplayRole)
         
-        if mode_text == "メモ" or mode_text == "⚡ 案件":
+        if mode_text == "メモ" or mode_text == "⚡ 案件" or mode_text == "📌 見出し":
             return None
 
         editor = QComboBox(parent)
@@ -43,7 +43,7 @@ class HeadcountDelegate(QStyledItemDelegate):
     def createEditor(self, parent, option, index):
         mode_text = index.model().data(index.siblingAtColumn(3), Qt.DisplayRole)
         
-        if mode_text == "メモ":
+        if mode_text == "メモ" or mode_text == "📌 見出し":
             return None
 
         editor = QComboBox(parent)
@@ -87,7 +87,7 @@ class HeadcountDelegate(QStyledItemDelegate):
 class ModeDelegate(QStyledItemDelegate):
     def createEditor(self, parent, option, index):
         editor = QComboBox(parent)
-        editor.addItems(["👤 人員", "⚡ 案件", "📝 メモ"])
+        editor.addItems(["👤 人員", "⚡ 案件", "📝 メモ", "📌 見出し"])
         editor.currentIndexChanged.connect(self.commitAndCloseEditor)
         QTimer.singleShot(0, editor.showPopup)
         return editor
@@ -106,6 +106,7 @@ class ModeDelegate(QStyledItemDelegate):
         else:
             if text and '案件' in text: editor.setCurrentIndex(1)
             elif text and 'メモ' in text: editor.setCurrentIndex(2)
+            elif text and '見出し' in text: editor.setCurrentIndex(3)
             else: editor.setCurrentIndex(0)
 
     def setModelData(self, editor, model, index):

@@ -180,7 +180,7 @@ class GanttApp(QMainWindow):
         
         tl.addWidget(QLabel(" ｜ デフォルト設定:"))
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems(["人員モード (手動)", "案件モード (自動)", "メモモード"])
+        self.mode_combo.addItems(["人員モード (手動)", "案件モード (自動)", "メモモード", "見出し"])
         tl.addWidget(self.mode_combo)
         
         tl.addStretch()
@@ -974,9 +974,12 @@ class GanttApp(QMainWindow):
         elif mode_idx == 1: 
             mode = "auto"
             color = "#323130"
-        else: 
+        elif mode_idx == 2: 
             mode = "memo"
             color = "#c0c0c0"
+        else:
+            mode = "heading"
+            color = "#4169e1"
         
         t = {
             "name": f"新規タスク {len(self.tasks)+1}",
@@ -990,7 +993,7 @@ class GanttApp(QMainWindow):
             t["workload"] = 1.0 
             t["periods"] = [{"start_date": t["auto_start_date"], "end_date": t["auto_start_date"], "color": color}]
             t["headcount"] = 0.0
-        elif mode == "memo":
+        elif mode in ["memo", "heading"]:
             t["periods"] = []
             t["headcount"] = 0.0
         else:
@@ -1132,7 +1135,7 @@ class GanttApp(QMainWindow):
                     self.table.setItem(r, col_idx, item_s)
                 
                 is_auto = not t.get('is_group') and t.get('mode') == 'auto'
-                is_memo = not t.get('is_group') and t.get('mode') == 'memo'
+                is_memo = not t.get('is_group') and t.get('mode') in ['memo', 'heading']
                 
                 if is_auto:
                     item_s.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
@@ -1152,8 +1155,10 @@ class GanttApp(QMainWindow):
                 else:
                     if is_auto:
                         item_s.setBackground(QColor(245, 250, 255))
-                    elif is_memo:
+                    elif t.get('mode') == 'memo':
                         item_s.setBackground(QColor(252, 252, 252))
+                    elif t.get('mode') == 'heading':
+                        item_s.setBackground(QColor(245, 245, 245))
                     else:
                         item_s.setBackground(QColor(255, 255, 255))
                 
@@ -1176,7 +1181,7 @@ class GanttApp(QMainWindow):
                 tasks_to_sum.append(self.tasks[i])
         
         for task in tasks_to_sum:
-            if task.get('mode') in ['auto', 'memo']:
+            if task.get('mode') in ['auto', 'memo', 'heading']:
                 continue
                 
             t_color = task.get('color', '#808080')
@@ -1230,7 +1235,7 @@ class GanttApp(QMainWindow):
                 item_s = self.table.item(r, col_idx)
                 if item_s:
                     is_auto = not t.get('is_group') and t.get('mode') == 'auto'
-                    is_memo = not t.get('is_group') and t.get('mode') == 'memo'
+                    is_memo = not t.get('is_group') and t.get('mode') in ['memo', 'heading']
                     
                     if is_auto:
                         item_s.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
@@ -1260,9 +1265,12 @@ class GanttApp(QMainWindow):
         elif mode_idx == 1: 
             mode = "auto"
             color = "#323130"
-        else: 
+        elif mode_idx == 2: 
             mode = "memo"
             color = "#c0c0c0"
+        else:
+            mode = "heading"
+            color = "#4169e1"
         
         t = {
             "name": f"新規 {len(self.tasks)+1}", 
@@ -1276,7 +1284,7 @@ class GanttApp(QMainWindow):
             t["workload"] = 1.0 
             t["periods"] = [{"start_date": sd.strftime("%Y-%m-%d"), "end_date": sd.strftime("%Y-%m-%d"), "color": color}]
             t["headcount"] = 0.0
-        elif mode == "memo":
+        elif mode in ["memo", "heading"]:
             t["periods"] = [{"start_date": sd.strftime("%Y-%m-%d"), "end_date": ed.strftime("%Y-%m-%d"), "color": color}]
             t["headcount"] = 0.0
         else:
@@ -1320,13 +1328,16 @@ class GanttApp(QMainWindow):
             is_group = t.get('is_group', False)
             is_auto = not is_group and t.get('mode') == 'auto'
             is_memo = not is_group and t.get('mode') == 'memo'
+            is_heading = not is_group and t.get('mode') == 'heading'
             
             if is_group:
                 bg_row = QColor(235, 235, 235)
             elif is_auto:
-                bg_row = QColor(225, 240, 255)  # 薄い青
+                bg_row = QColor(235, 250, 235)  # 案件: 薄い緑
             elif is_memo:
-                bg_row = QColor(255, 250, 230)  # 薄い黄色
+                bg_row = QColor(255, 250, 230)
+            elif is_heading:
+                bg_row = QColor(225, 240, 255)  # 見出し: 薄い青
             else:
                 bg_row = QColor(255, 255, 255)
             
@@ -1414,10 +1425,18 @@ class GanttApp(QMainWindow):
                     item_eff.setText("-")
                     item_eff.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                     item_period.setText(t.get('auto_start_date', ''))
-                elif is_memo:
-                    item_mode.setText("📝 メモ")
-                    item_mode.setForeground(QColor(51, 51, 51))
-                    item_mode.setBackground(QColor("#c0c0c0"))
+                elif is_memo or is_heading:
+                    if is_heading:
+                        item_mode.setText("📌 見出し")
+                        item_mode.setForeground(QColor(255, 255, 255))
+                        item_mode.setBackground(QColor("#4169e1"))
+                        f_name = item_name.font()
+                        f_name.setBold(True)
+                        item_name.setFont(f_name)
+                    else:
+                        item_mode.setText("📝 メモ")
+                        item_mode.setForeground(QColor(51, 51, 51))
+                        item_mode.setBackground(QColor("#c0c0c0"))
 
                     item_hc.setText("-")
                     item_hc.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
@@ -1465,7 +1484,7 @@ class GanttApp(QMainWindow):
                 if not is_group and is_auto:
                     item_s.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
                     item_s.setText(f"{t.get('workload', 1.0):.1f}工数")
-                elif not is_group and is_memo:
+                elif not is_group and (is_memo or is_heading):
                     item_s.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                     item_s.setText("-")
                 else:
@@ -1508,6 +1527,7 @@ class GanttApp(QMainWindow):
             new_mode_en = 'manual'
             if '案件' in new_mode_ja: new_mode_en = 'auto'
             elif 'メモ' in new_mode_ja: new_mode_en = 'memo'
+            elif '見出し' in new_mode_ja: new_mode_en = 'heading'
             
             if t.get('mode') != new_mode_en:
                 t['mode'] = new_mode_en
@@ -1516,6 +1536,8 @@ class GanttApp(QMainWindow):
                     new_color = '#323130'
                 elif new_mode_en == 'memo':
                     new_color = '#c0c0c0'
+                elif new_mode_en == 'heading':
+                    new_color = '#4169e1'
                 else:
                     new_color = '#808080'
                 t['color'] = new_color
@@ -1531,7 +1553,7 @@ class GanttApp(QMainWindow):
                             p['color'] = new_color
                             if p.get('text') and ("⚠️ キャパオーバー" in p.get('text') or "⚠️ 進行不可" in p.get('text')):
                                 p['text'] = ""
-                elif new_mode_en == 'memo':
+                elif new_mode_en in ['memo', 'heading']:
                     t['headcount'] = 0.0
                     if t.get('periods'):
                         for p in t['periods']:
@@ -1564,7 +1586,7 @@ class GanttApp(QMainWindow):
                 item.setText(f"{int(hc)}" if hc > 0 else "制限なし")
                 self.table.blockSignals(False)
                 self.recalculate_auto_tasks()
-            elif t.get('mode') == 'memo':
+            elif t.get('mode') in ['memo', 'heading']:
                 self.table.blockSignals(True)
                 item.setText("-")
                 self.table.blockSignals(False)
@@ -1583,7 +1605,7 @@ class GanttApp(QMainWindow):
                 self.recalculate_auto_tasks()
                 
         elif col == 5:
-            if t.get('is_group') or t.get('mode') != 'manual': return
+            if t.get('is_group') or t.get('mode') not in ['manual']: return
             val_str = item.text().replace('%', '').strip()
             try:
                 t['efficiency'] = float(val_str) / 100.0
