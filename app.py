@@ -420,7 +420,8 @@ class GanttApp(QMainWindow):
             if not self.table.isColumnHidden(c):
                 table_width += self.table.columnWidth(c)
                 
-        total_height = self.header_height + len(selected_indices) * self.row_height
+        title_height = 50 if getattr(self, 'project_title', '') else 0
+        total_height = title_height + self.header_height + len(selected_indices) * self.row_height
         
         rect = printer.pageRect(QPrinter.DevicePixel)
         painter = QPainter(printer)
@@ -435,7 +436,15 @@ class GanttApp(QMainWindow):
         painter.scale(scale, scale)
         painter.fillRect(QRectF(0, 0, logical_width, logical_height), Qt.white)
         
+        if getattr(self, 'project_title', ''):
+            painter.save()
+            painter.setFont(QFont("Segoe UI", 16, QFont.Bold))
+            painter.setPen(Qt.black)
+            painter.drawText(QRectF(10, 0, logical_width - 10, title_height), Qt.AlignLeft | Qt.AlignVCenter, self.project_title)
+            painter.restore()
+        
         painter.save()
+        painter.translate(0, title_height)
         curr_x = 0
         painter.setFont(QFont("Segoe UI", 9, QFont.Bold))
         for c in range(self.table.columnCount()):
@@ -475,8 +484,8 @@ class GanttApp(QMainWindow):
         painter.restore()
         
         painter.save()
-        painter.translate(table_width, 0)
-        painter.setClipRect(QRectF(0, 0, chart_width, total_height))
+        painter.translate(table_width, title_height)
+        painter.setClipRect(QRectF(0, 0, chart_width, total_height - title_height))
         
         header_source_rect = QRectF(chart_start_x, 0, chart_width, self.header_height)
         header_target_rect = QRectF(0, 0, chart_width, self.header_height)
