@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                                QHBoxLayout, QPushButton, QTableWidgetItem, 
                                QSplitter, QGraphicsView, QMessageBox, 
                                QFileDialog, QLabel, QSpinBox, QComboBox, QHeaderView, QTableWidget,
-                               QStyleOptionGraphicsItem, QGraphicsTextItem)
+                               QStyleOptionGraphicsItem, QGraphicsTextItem, QLineEdit)
 from PySide6.QtCore import Qt, QTimer, QRectF, QPointF
 from PySide6.QtGui import QBrush, QPen, QColor, QFont, QIcon, QPainter, QPageLayout
 from PySide6.QtPrintSupport import QPrinter, QPrintPreviewDialog
@@ -25,6 +25,7 @@ class GanttApp(QMainWindow):
         super().__init__()
         self.setWindowTitle("MiyaGantt - Professional Gantt Chart")
         self.resize(1380, 850)
+        self.project_title = ""
         self.tasks = []
         self.day_width = 40
         self.row_height = 40
@@ -76,6 +77,7 @@ class GanttApp(QMainWindow):
 
     def get_state_json(self):
         return json.dumps({
+            "project_title": getattr(self, 'project_title', ""),
             "tasks": self.tasks,
             "custom_holidays": self.custom_holidays
         }, ensure_ascii=False)
@@ -114,6 +116,12 @@ class GanttApp(QMainWindow):
 
     def restore_state_json(self, state_json):
         state = json.loads(state_json)
+        self.project_title = state.get("project_title", "")
+        if hasattr(self, 'title_edit'):
+            self.title_edit.blockSignals(True)
+            self.title_edit.setText(self.project_title)
+            self.title_edit.blockSignals(False)
+            self.on_title_changed(self.project_title)
         self.tasks = state["tasks"]
         self.custom_holidays = state["custom_holidays"]
         self.recalculate_auto_tasks()
@@ -123,6 +131,23 @@ class GanttApp(QMainWindow):
         mw = QWidget()
         self.setCentralWidget(mw)
         ml = QVBoxLayout(mw)
+        
+        # タイトル入力行
+        title_layout = QHBoxLayout()
+        self.title_edit = QLineEdit()
+        self.title_edit.setPlaceholderText("プロジェクトのタイトルを入力...")
+        self.title_edit.setFont(QFont("Segoe UI", 16, QFont.Bold))
+        self.title_edit.setStyleSheet("""
+            QLineEdit { border: 1px solid transparent; background: transparent; padding: 4px; border-radius: 4px; color: #333333; }
+            QLineEdit:hover { border: 1px solid #cccccc; }
+            QLineEdit:focus { border: 1px solid #0078d4; background: #ffffff; }
+        """)
+        self.title_edit.setText(self.project_title)
+        self.title_edit.textChanged.connect(self.on_title_changed)
+        self.title_edit.editingFinished.connect(self.save_state_if_changed)
+        title_layout.addWidget(self.title_edit)
+        ml.addLayout(title_layout)
+        
         tl = QHBoxLayout()
         
         self.btn_add = QPushButton("追加")
@@ -331,6 +356,11 @@ class GanttApp(QMainWindow):
         self.chart_view.horizontalScrollBar().sliderReleased.connect(self.snap_horizontal_scroll)
         self.table.verticalScrollBar().valueChanged.connect(self.chart_view.verticalScrollBar().setValue)
         self.chart_view.verticalScrollBar().valueChanged.connect(self.table.verticalScrollBar().setValue)
+
+    def on_title_changed(self, text):
+        self.project_title = text
+        title_str = f"{text} - MiyaGantt" if text else "MiyaGantt - Professional Gantt Chart"
+        self.setWindowTitle(title_str)
 
     def print_gantt(self):
         if not self.visible_tasks_info:
@@ -1491,6 +1521,7 @@ class GanttApp(QMainWindow):
             self.last_path = p
             try:
                 data_to_save = {
+                    "project_title": self.project_title,
                     "settings": {
                         "min_date": self.min_date.strftime("%Y-%m-%d"),
                         "max_date": self.max_date.strftime("%Y-%m-%d") if hasattr(self, 'max_date') else None,
@@ -1664,6 +1695,12 @@ class GanttApp(QMainWindow):
                     loaded_data = json.load(f)
                 
                 if isinstance(loaded_data, dict) and "tasks" in loaded_data:
+                    self.project_title = loaded_data.get("project_title", "")
+                    self.title_edit.blockSignals(True)
+                    self.title_edit.setText(self.project_title)
+                    self.title_edit.blockSignals(False)
+                    self.on_title_changed(self.project_title)
+
                     self.tasks = loaded_data["tasks"]
                     settings = loaded_data.get("settings", {})
                     min_date_str = settings.get("min_date")
@@ -1705,6 +1742,12 @@ class GanttApp(QMainWindow):
                     self.update_display_days()
                 else:
                     self.tasks = loaded_data
+                    self.project_title = ""
+                    self.title_edit.blockSignals(True)
+                    self.title_edit.setText("")
+                    self.title_edit.blockSignals(False)
+                    self.on_title_changed("")
+
                     self.min_date = datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
                     self.display_unit = 1
                     self.display_count = 6
