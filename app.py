@@ -1318,6 +1318,17 @@ class GanttApp(QMainWindow):
             t = info['task']
             indent = "    " * info['indent']
             is_group = t.get('is_group', False)
+            is_auto = not is_group and t.get('mode') == 'auto'
+            is_memo = not is_group and t.get('mode') == 'memo'
+            
+            if is_group:
+                bg_row = QColor(235, 235, 235)
+            elif is_auto:
+                bg_row = QColor(225, 240, 255)  # 薄い青
+            elif is_memo:
+                bg_row = QColor(255, 250, 230)  # 薄い黄色
+            else:
+                bg_row = QColor(255, 255, 255)
             
             for c in range(total_cols):
                 if self.table.item(r, c) is None:
@@ -1325,20 +1336,18 @@ class GanttApp(QMainWindow):
             
             mark_item = self.table.item(r, 0)
             mark_item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
-            mark_item.setBackground(QColor(255, 255, 255))
-            if is_group: mark_item.setBackground(QColor(242, 242, 242))
+            mark_item.setBackground(bg_row)
 
             toggle_item = self.table.item(r, 1)
             toggle_item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
             toggle_item.setForeground(QColor(51, 51, 51))
             f = toggle_item.font(); f.setBold(False); toggle_item.setFont(f)
-            toggle_item.setBackground(QColor(255, 255, 255))
+            toggle_item.setBackground(bg_row)
             
             if is_group:
                 toggle_item.setText("▼" if not t.get('collapsed') else "▶")
                 toggle_item.setTextAlignment(Qt.AlignCenter)
                 f = toggle_item.font(); f.setBold(True); toggle_item.setFont(f)
-                toggle_item.setBackground(QColor(242, 242, 242))
             else:
                 toggle_item.setText("")
 
@@ -1346,59 +1355,50 @@ class GanttApp(QMainWindow):
             item_name.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
             item_name.setForeground(QColor(51, 51, 51))
             f = item_name.font(); f.setBold(False); item_name.setFont(f)
-            item_name.setBackground(QColor(255, 255, 255))
+            item_name.setBackground(bg_row)
             item_name.setText(indent + t.get('name', ''))
             
             item_mode = self.table.item(r, 3)
             item_mode.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
             item_mode.setForeground(QColor(51, 51, 51))
-            item_mode.setBackground(QColor(255, 255, 255))
             
             item_hc = self.table.item(r, 4)
             item_hc.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
             item_hc.setForeground(QColor(51, 51, 51))
-            item_hc.setBackground(QColor(255, 255, 255))
+            item_hc.setBackground(bg_row)
             
             item_eff = self.table.item(r, 5)
             item_eff.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
             item_eff.setForeground(QColor(51, 51, 51))
-            item_eff.setBackground(QColor(255, 255, 255))
+            item_eff.setBackground(bg_row)
             
             item_period = self.table.item(r, 6)
             item_period.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
             item_period.setForeground(QColor(51, 51, 51))
-            item_period.setBackground(QColor(255, 255, 255))
+            item_period.setBackground(bg_row)
             
             item_color = self.table.item(r, 7)
             item_color.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
             item_color.setForeground(QColor(51, 51, 51))
-            item_color.setBackground(QColor(255, 255, 255))
             
             if is_group:
                 f = item_name.font(); f.setBold(True); item_name.setFont(f)
-                item_name.setBackground(QColor(242, 242, 242))
                 
                 item_mode.setText("")
-                item_mode.setBackground(QColor(242, 242, 242))
+                item_mode.setBackground(bg_row)
                 
                 item_hc.setText(f"{int(t.get('headcount', 1.0))}")
                 item_hc.setTextAlignment(Qt.AlignCenter)
-                item_hc.setBackground(QColor(242, 242, 242))
                 
                 item_eff.setText("")
-                item_eff.setBackground(QColor(242, 242, 242))
                 item_eff.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                 
                 item_period.setText("")
                 item_period.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
-                item_period.setBackground(QColor(242, 242, 242))
                 item_color.setText("")
                 item_color.setBackground(QColor(200, 200, 200))
                 item_color.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
             else:
-                is_auto = t.get('mode') == 'auto'
-                is_memo = t.get('mode') == 'memo'
-                
                 f_m = item_mode.font()
                 f_m.setBold(True)
                 item_mode.setFont(f_m)
@@ -1407,12 +1407,6 @@ class GanttApp(QMainWindow):
                     item_mode.setText("⚡ 案件")
                     item_mode.setForeground(QColor(255, 255, 255))
                     item_mode.setBackground(QColor("#323130"))
-                    
-                    bg_row = QColor(245, 250, 255)
-                    item_name.setBackground(bg_row)
-                    item_hc.setBackground(bg_row)
-                    item_eff.setBackground(bg_row)
-                    item_period.setBackground(bg_row)
 
                     hc = t.get('headcount', 0.0)
                     item_hc.setText(f"{int(hc)}" if hc > 0 else "制限なし")
@@ -1424,12 +1418,6 @@ class GanttApp(QMainWindow):
                     item_mode.setText("📝 メモ")
                     item_mode.setForeground(QColor(51, 51, 51))
                     item_mode.setBackground(QColor("#c0c0c0"))
-                    
-                    bg_row = QColor(250, 250, 250)
-                    item_name.setBackground(bg_row)
-                    item_hc.setBackground(bg_row)
-                    item_eff.setBackground(bg_row)
-                    item_period.setBackground(bg_row)
 
                     item_hc.setText("-")
                     item_hc.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
@@ -1448,12 +1436,6 @@ class GanttApp(QMainWindow):
                     item_mode.setText("👤 人員")
                     item_mode.setForeground(QColor(255, 255, 255))
                     item_mode.setBackground(QColor("#808080"))
-                    
-                    bg_row = QColor(255, 255, 255)
-                    item_name.setBackground(bg_row)
-                    item_hc.setBackground(bg_row)
-                    item_eff.setBackground(bg_row)
-                    item_period.setBackground(bg_row)
 
                     item_hc.setText(f"{int(t.get('headcount', 1.0))}")
                     eff = t.get('efficiency', 1.0)
@@ -1493,16 +1475,7 @@ class GanttApp(QMainWindow):
                 
                 item_s.setForeground(QColor(51, 51, 51))
                 item_s.setTextAlignment(Qt.AlignCenter)
-                
-                if is_group:
-                    item_s.setBackground(QColor(242, 242, 242))
-                else:
-                    if is_auto:
-                        item_s.setBackground(QColor(245, 250, 255))
-                    elif is_memo:
-                        item_s.setBackground(QColor(250, 250, 250))
-                    else:
-                        item_s.setBackground(QColor(255, 255, 255))
+                item_s.setBackground(bg_row)
                 
         if self.table.rowCount() > new_rows:
             self.table.setRowCount(new_rows)
