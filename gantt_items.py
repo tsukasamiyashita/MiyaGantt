@@ -27,6 +27,7 @@ class GanttBarItem(QGraphicsRectItem):
         
         self.resizing_left = False
         self.resizing_right = False
+        self.is_moving = False
         
         periods = self.task.get('periods', [])
         if self.period_index < len(periods):
@@ -77,7 +78,7 @@ class GanttBarItem(QGraphicsRectItem):
 
         start_d = p_dict.get('start_date', '')
         end_d = p_dict.get('end_date', '')
-        mode_str = "⚡ 案件モード" if self.task.get('mode') == 'auto' else "📝 メモモード" if self.task.get('mode') == 'memo' else "👤 人員モード"
+        mode_str = "⚡ 案件モード" if self.task.get('mode') == 'auto' else "📝 メモモード" if self.task.get('mode') == 'memo' else "📌 見出し" if self.task.get('mode') == 'heading' else "👤 人員モード"
         self.setToolTip(f"タスク: {self.task.get('name','')}\nモード: {mode_str}\n期間: {start_d}〜{end_d}")
 
     def itemChange(self, change, value):
@@ -158,6 +159,8 @@ class GanttBarItem(QGraphicsRectItem):
             margin = 12 if w <= self.app.day_width else 10
             margin = min(margin, w / 2 - 2)
             
+            self.is_moving = False
+            
             if self.task.get('mode') == 'auto':
                 self.setCursor(Qt.ClosedHandCursor)
                 self.drag_start_scene_pos = event.scenePos()
@@ -204,6 +207,9 @@ class GanttBarItem(QGraphicsRectItem):
                 self.setRect(0, 0, nr.width() + diff, nr.height())
         elif hasattr(self, 'drag_start_scene_pos'):
             delta = event.scenePos() - self.drag_start_scene_pos
+            if delta.manhattanLength() > 2:
+                self.is_moving = True
+                
             dx = round(delta.x() / snap_x) * snap_x
             dy = round(delta.y() / snap_y) * snap_y
             
@@ -233,8 +239,18 @@ class GanttBarItem(QGraphicsRectItem):
 
     def mouseReleaseEvent(self, event):
         was_resizing = self.resizing_left or self.resizing_right
+        was_moving = getattr(self, 'is_moving', False)
+        
         self.resizing_left = self.resizing_right = False
+        self.is_moving = False
         self.setCursor(Qt.OpenHandCursor)
+        
+        if hasattr(self, 'drag_start_scene_pos'):
+            del self.drag_start_scene_pos
+            
+        if not was_resizing and not was_moving:
+            super().mouseReleaseEvent(event)
+            return
         
         snap = self.app.day_width
         sx = round(self.pos().x() / snap) * snap
@@ -242,13 +258,18 @@ class GanttBarItem(QGraphicsRectItem):
         sd = self.app.min_date + timedelta(days=sx / self.app.day_width)
         ed = sd + timedelta(days=sw / self.app.day_width - 0.001)
 
+        target_period_dicts = []
+
         if was_resizing and self.task.get('mode') != 'auto':
             if 'periods' not in self.task:
                 self.task['periods'] = [{'start_date': self.task.get('start_date', ''), 'end_date': self.task.get('end_date', '')}]
             if 0 <= self.period_index < len(self.task['periods']):
-                self.task['periods'][self.period_index]['start_date'] = sd.strftime("%Y-%m-%d")
-                self.task['periods'][self.period_index]['end_date'] = ed.strftime("%Y-%m-%d")
-        elif hasattr(self, 'drag_start_scene_pos'):
+                p_dict = self.task['periods'][self.period_index]
+                p_dict['start_date'] = sd.strftime("%Y-%m-%d")
+                p_dict['end_date'] = ed.strftime("%Y-%m-%d")
+                target_period_dicts.append(p_dict)
+                
+        elif was_moving:
             selected_items = [it for it in self.scene().selectedItems() if isinstance(it, GanttBarItem)]
             if self not in selected_items:
                 selected_items.append(self)
@@ -304,28 +325,19 @@ class GanttBarItem(QGraphicsRectItem):
                         target_task.setdefault('periods', []).append(m['period_data'])
                 else:
                     m['task'].setdefault('periods', []).append(m['period_data'])
+                    
+                target_period_dicts.append(m['period_data'])
 
-        if hasattr(self, 'drag_start_scene_pos'):
-            del self.drag_start_scene_pos
-            
         super().mouseReleaseEvent(event)
-        
-        selected_period_dicts = []
-        selected_items = [it for it in self.scene().selectedItems() if isinstance(it, GanttBarItem)]
-        if self not in selected_items:
-            selected_items.append(self)
-        for it in selected_items:
-            if hasattr(it, 'period_dict'):
-                selected_period_dicts.append(it.period_dict)
 
         def finalize_ui():
             self.app.recalculate_auto_tasks()
             self.app.sync_table_from_tasks()
             self.app.update_ui()
-            if selected_period_dicts:
+            if target_period_dicts:
                 for item in self.app.cs.items():
                     if isinstance(item, GanttBarItem) and hasattr(item, 'period_dict'):
-                        if item.period_dict in selected_period_dicts:
+                        if item.period_dict in target_period_dicts:
                             item.setSelected(True)
             self.app.save_state_if_changed()
 
@@ -357,13 +369,13 @@ class GanttBarItem(QGraphicsRectItem):
         
         copy_action = None
         cut_action = None
-        if self.task.get('mode') in ['manual', 'memo']:
+        if self.task.get('mode') in ['manual', 'memo', 'heading']:
             copy_action = menu.addAction("コピー")
             cut_action = menu.addAction("切り取り")
             
         del_action = menu.addAction("この期間を削除")
 
-        selected_items = [it for it in self.scene().selectedItems() if isinstance(it, GanttBarItem) and it.task.get('mode') in ['manual', 'memo']]
+        selected_items = [it for it in self.scene().selectedItems() if isinstance(it, GanttBarItem) and it.task.get('mode') in ['manual', 'memo', 'heading']]
         if self not in selected_items:
             selected_items.append(self)
             
@@ -430,6 +442,8 @@ class GanttCommentItem(QGraphicsRectItem):
         self.setPen(QPen(Qt.NoPen))
         self.setBrush(QBrush(Qt.transparent))
         
+        self.is_moving = False
+        
         self.text_item = QGraphicsTextItem('', self)
         font = QFont("Segoe UI", 10)
         self.text_item.setFont(font)
@@ -475,6 +489,7 @@ class GanttCommentItem(QGraphicsRectItem):
             self.drag_start_pos = self.pos()
             self.drag_start_scene_pos = event.scenePos()
             self.drag_start_row = self.row
+            self.is_moving = False
             
             selected_items = [it for it in self.scene().selectedItems() if isinstance(it, GanttCommentItem)]
             if self not in selected_items:
@@ -491,6 +506,9 @@ class GanttCommentItem(QGraphicsRectItem):
             snap_y = self.app.row_height
             
             delta = event.scenePos() - self.drag_start_scene_pos
+            if delta.manhattanLength() > 2:
+                self.is_moving = True
+                
             dx = round(delta.x() / snap_x) * snap_x
             dy = round(delta.y() / snap_y) * snap_y
             
@@ -515,53 +533,71 @@ class GanttCommentItem(QGraphicsRectItem):
 
     def mouseReleaseEvent(self, event):
         self.setCursor(Qt.OpenHandCursor)
+        was_moving = getattr(self, 'is_moving', False)
+        self.is_moving = False
         
         if hasattr(self, 'drag_start_scene_pos'):
-            snap_x = self.app.day_width
-            snap_y = self.app.row_height
-            
-            selected_items = [it for it in self.scene().selectedItems() if isinstance(it, GanttCommentItem)]
-            if self not in selected_items:
-                selected_items.append(self)
-                
-            moves = []
-            for it in selected_items:
-                sx = round(it.pos().x() / snap_x) * snap_x
-                sd = self.app.min_date + timedelta(days=sx / snap_x)
-                new_row = int((it.pos().y() - 5) / snap_y)
-                
-                moves.append({
-                    'item': it,
-                    'date': sd.strftime("%Y-%m-%d"),
-                    'new_row': new_row,
-                    'task': it.task,
-                    'comment_idx': it.comment_index
-                })
-                
-            moves.sort(key=lambda x: (x['task'] is self.task, x['comment_idx']), reverse=True)
-            
-            for m in moves:
-                c_dict = m['task']['comments'].pop(m['comment_idx'])
-                c_dict['date'] = m['date']
-                m['comment_data'] = c_dict
-                
-            for m in moves:
-                target_idx = m['new_row']
-                if target_idx < len(self.app.visible_tasks_info):
-                    target_task = self.app.visible_tasks_info[target_idx]['task']
-                    if target_task.get('is_group'):
-                        m['task'].setdefault('comments', []).append(m['comment_data'])
-                    else:
-                        target_task.setdefault('comments', []).append(m['comment_data'])
-                else:
-                    m['task'].setdefault('comments', []).append(m['comment_data'])
+            del self.drag_start_scene_pos
 
-            for it in selected_items:
-                if hasattr(it, 'drag_start_scene_pos'):
-                    del it.drag_start_scene_pos
+        if not was_moving:
+            super().mouseReleaseEvent(event)
+            return
+            
+        snap_x = self.app.day_width
+        snap_y = self.app.row_height
         
+        selected_items = [it for it in self.scene().selectedItems() if isinstance(it, GanttCommentItem)]
+        if self not in selected_items:
+            selected_items.append(self)
+            
+        moves = []
+        for it in selected_items:
+            sx = round(it.pos().x() / snap_x) * snap_x
+            sd = self.app.min_date + timedelta(days=sx / snap_x)
+            new_row = int((it.pos().y() - 5) / snap_y)
+            
+            moves.append({
+                'item': it,
+                'date': sd.strftime("%Y-%m-%d"),
+                'new_row': new_row,
+                'task': it.task,
+                'comment_idx': it.comment_index
+            })
+            
+        moves.sort(key=lambda x: (x['task'] is self.task, x['comment_idx']), reverse=True)
+        
+        target_comment_dicts = []
+        
+        for m in moves:
+            c_dict = m['task']['comments'].pop(m['comment_idx'])
+            c_dict['date'] = m['date']
+            m['comment_data'] = c_dict
+            
+        for m in moves:
+            target_idx = m['new_row']
+            if target_idx < len(self.app.visible_tasks_info):
+                target_task = self.app.visible_tasks_info[target_idx]['task']
+                if target_task.get('is_group'):
+                    m['task'].setdefault('comments', []).append(m['comment_data'])
+                else:
+                    target_task.setdefault('comments', []).append(m['comment_data'])
+            else:
+                m['task'].setdefault('comments', []).append(m['comment_data'])
+            
+            target_comment_dicts.append(m['comment_data'])
+
         super().mouseReleaseEvent(event)
-        QTimer.singleShot(0, lambda: (self.app.update_ui(), self.app.save_state_if_changed()))
+        
+        def finalize_ui():
+            self.app.update_ui()
+            if target_comment_dicts:
+                for item in self.app.cs.items():
+                    if isinstance(item, GanttCommentItem):
+                        if self.task.get('comments', [])[item.comment_index] in target_comment_dicts:
+                            item.setSelected(True)
+            self.app.save_state_if_changed()
+
+        QTimer.singleShot(0, finalize_ui)
 
     def mouseDoubleClickEvent(self, event):
         super().mouseDoubleClickEvent(event)
