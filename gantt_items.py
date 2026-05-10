@@ -711,25 +711,33 @@ class ChartScene(QGraphicsScene):
 
     def mouseMoveEvent(self, e):
         if self.selection_rect:
-            rect = QRectF(self.selection_start, e.scenePos()).normalized()
-            self.selection_rect.setRect(rect)
-            return
+            try:
+                rect = QRectF(self.selection_start, e.scenePos()).normalized()
+                self.selection_rect.setRect(rect)
+                return
+            except RuntimeError:
+                self.selection_rect = None
+                self.selection_start = None
         super().mouseMoveEvent(e)
 
     def mouseReleaseEvent(self, e):
         if self.selection_rect:
-            rect = self.selection_rect.rect()
-            self.clearSelection()
-            for item in self.items(rect):
-                if isinstance(item, GanttBarItem):
-                    if item.task.get('mode') != 'auto':
+            try:
+                rect = self.selection_rect.rect()
+                self.clearSelection()
+                for item in self.items(rect):
+                    if isinstance(item, GanttBarItem):
+                        if item.task.get('mode') != 'auto':
+                            item.setSelected(True)
+                    elif isinstance(item, GanttCommentItem):
                         item.setSelected(True)
-                elif isinstance(item, GanttCommentItem):
-                    item.setSelected(True)
-            
-            self.removeItem(self.selection_rect)
-            self.selection_rect = None
-            self.selection_start = None
+                
+                self.removeItem(self.selection_rect)
+            except RuntimeError:
+                pass
+            finally:
+                self.selection_rect = None
+                self.selection_start = None
             return
 
         if self.start_x > 0:

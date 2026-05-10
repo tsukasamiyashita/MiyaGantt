@@ -1730,6 +1730,11 @@ class GanttApp(QMainWindow):
         v = (target_date - self.min_date).days * self.day_width
         self.chart_view.horizontalScrollBar().setValue(int(v))
 
+    def _scroll_to_specific_date(self, target_date):
+        if self.day_width <= 0: return
+        v = (target_date - self.min_date).days * self.day_width
+        self.chart_view.horizontalScrollBar().setValue(int(v))
+
     def scroll_by_unit(self, unit, direction):
         if self.day_width <= 0: return
         
@@ -1812,6 +1817,10 @@ class GanttApp(QMainWindow):
 
     def _perform_save(self, path):
         try:
+            scroll_val = self.chart_view.horizontalScrollBar().value()
+            days_scrolled = round(scroll_val / self.day_width) if self.day_width > 0 else 0
+            visible_start = self.min_date + timedelta(days=days_scrolled)
+
             data_to_save = {
                 "project_title": getattr(self, 'project_title', ""),
                 "settings": {
@@ -1821,7 +1830,8 @@ class GanttApp(QMainWindow):
                     "display_count": self.display_count,
                     "zoom_unit": self.zoom_unit,
                     "zoom_count": self.zoom_count,
-                    "custom_holidays": self.custom_holidays
+                    "custom_holidays": getattr(self, 'custom_holidays', {}),
+                    "last_visible_start": visible_start.strftime("%Y-%m-%d")
                 },
                 "tasks": self.tasks
             }
@@ -1924,7 +1934,7 @@ class GanttApp(QMainWindow):
             "column_visibility": column_visibility,
             "column_widths": column_widths,
             "splitter_sizes": self.splitter.sizes(),
-            "custom_holidays": self.custom_holidays,
+            "custom_holidays": getattr(self, 'custom_holidays', {}),
             "last_path": self.last_path
         }
         
@@ -1949,7 +1959,7 @@ class GanttApp(QMainWindow):
             self.display_unit = config.get("display_unit", self.display_unit)
             self.display_count = config.get("display_count", self.display_count)
             self.summary_visible = config.get("summary_visible", self.summary_visible)
-            self.custom_holidays = config.get("custom_holidays", self.custom_holidays)
+            self.custom_holidays = config.get("custom_holidays", getattr(self, 'custom_holidays', {}))
             self.last_path = config.get("last_path", "")
             
             column_widths = config.get("column_widths", {})
@@ -1986,6 +1996,8 @@ class GanttApp(QMainWindow):
                 with open(p, 'r', encoding='utf-8') as f:
                     loaded_data = json.load(f)
                 
+                last_visible_start_str = None
+
                 if isinstance(loaded_data, dict) and "tasks" in loaded_data:
                     self.project_title = loaded_data.get("project_title", "")
                     self.title_edit.blockSignals(True)
@@ -2032,6 +2044,8 @@ class GanttApp(QMainWindow):
                     
                     self.calculate_day_width()
                     self.update_display_days()
+                    
+                    last_visible_start_str = settings.get("last_visible_start")
                 else:
                     self.tasks = loaded_data
                     self.project_title = ""
@@ -2047,10 +2061,18 @@ class GanttApp(QMainWindow):
                     self.zoom_count = 1
                     self.calculate_day_width()
                     self.update_display_days()
+                    last_visible_start_str = None
                     
                 self.recalculate_auto_tasks()
                 self.update_ui()
                 self.init_history()
+                
+                if last_visible_start_str:
+                    try:
+                        target_date = datetime.strptime(last_visible_start_str, "%Y-%m-%d")
+                        QTimer.singleShot(50, lambda: self._scroll_to_specific_date(target_date))
+                    except ValueError:
+                        pass
             except Exception as e:
                 QMessageBox.critical(self, "エラー", f"読込失敗: {e}")
 
