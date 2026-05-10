@@ -1,13 +1,15 @@
-# tsukasamiyashita/miyagantt/MiyaGantt-46a1664b6d1737cb32f1dd17429ce06cca8dc678/dialogs.py
+# tsukasamiyashita/miyagantt/MiyaGantt-537e3273fbb3bd08e66a6a82ad13431ee8f2e49c/dialogs.py
 import os
 import sys
 import calendar
+import re
+import markdown
 from datetime import datetime, timedelta
 from PySide6.QtWidgets import (QDialog, QFormLayout, QDateEdit, QPushButton, 
                                QVBoxLayout, QHBoxLayout, QScrollArea, QWidget, QLabel, 
                                QGridLayout, QTabWidget, QTableWidget, 
                                QAbstractItemView, QTableWidgetItem, QTextBrowser,
-                               QListWidget, QListWidgetItem, QDialogButtonBox, QComboBox, QFileDialog, QMessageBox)
+                               QListWidget, QListWidgetItem, QDialogButtonBox, QComboBox, QFileDialog, QMessageBox, QSplitter)
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QColor, QFont, QPageLayout
 from PySide6.QtPrintSupport import QPrinterInfo, QPrintPreviewWidget, QPageSetupDialog, QPrintDialog, QPrinter
@@ -237,28 +239,148 @@ class HelpDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("ヘルプ - MiyaGantt")
-        self.resize(850, 650)
+        self.resize(800, 700)
+        
+        self.setStyleSheet("QDialog { background-color: #ffffff; }")
+        
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 15)
+        layout.setSpacing(10)
         
         self.browser = QTextBrowser()
         self.browser.setOpenExternalLinks(True) 
-        
-        readme_path = self.get_readme_path()
-        if os.path.exists(readme_path):
-            try:
-                with open(readme_path, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                self.browser.setMarkdown(content)
-            except Exception as e:
-                self.browser.setText(f"README.md の読み込みに失敗しました: {e}")
-        else:
-            self.browser.setText(f"README.md が見つかりませんでした。\n検索パス: {readme_path}")
-            
+        self.browser.setStyleSheet("""
+            QTextBrowser {
+                border: none;
+                background-color: #ffffff;
+            }
+        """)
         layout.addWidget(self.browser)
         
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
         btn_close = QPushButton("閉じる")
+        btn_close.setMinimumWidth(120)
+        btn_close.setMinimumHeight(35)
+        btn_close.setStyleSheet("""
+            QPushButton {
+                background-color: #005fb8;
+                border: none;
+                border-radius: 4px;
+                font-weight: bold;
+                color: #ffffff;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background-color: #004a98;
+            }
+        """)
         btn_close.clicked.connect(self.accept)
-        layout.addWidget(btn_close)
+        btn_layout.addWidget(btn_close)
+        layout.addLayout(btn_layout)
+
+        self.load_readme()
+
+    def load_readme(self):
+        readme_path = self.get_readme_path()
+        if not os.path.exists(readme_path):
+            self.browser.setHtml(f"<p>README.md が見つかりませんでした。<br>検索パス: {readme_path}</p>")
+            return
+
+        try:
+            with open(readme_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                
+            html_body = self.convert_markdown_to_styled_html(content)
+            self.browser.setHtml(html_body)
+                
+        except Exception as e:
+            self.browser.setHtml(f"<p>README.md の読み込みに失敗しました: {e}</p>")
+
+    def convert_markdown_to_styled_html(self, md_text):
+        html = md_text
+        try:
+            html = markdown.markdown(md_text, extensions=['tables', 'fenced_code'])
+        except ImportError:
+            html = re.sub(r'^### (.*)', r'<h3>\1</h3>', html, flags=re.MULTILINE)
+            html = re.sub(r'^## (.*)', r'<h2>\1</h2>', html, flags=re.MULTILINE)
+            html = re.sub(r'^# (.*)', r'<h1>\1</h1>', html, flags=re.MULTILINE)
+            html = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', html)
+            html = re.sub(r'^- (.*)', r'<li>\1</li>', html, flags=re.MULTILINE)
+            html = html.replace('</li>\n<li>', '</li><li>')
+            html = re.sub(r'(<li>.*</li>)', r'<ul>\1</ul>', html, flags=re.DOTALL)
+            html = html.replace('\n\n', '<br><br>')
+
+        styled_html = f"""
+        <html>
+        <head>
+        <style>
+            body {{
+                font-family: 'Segoe UI', Meiryo, sans-serif;
+                font-size: 14.5px;
+                color: #323130;
+                line-height: 1.7;
+                background-color: #ffffff;
+                margin: 0;
+                padding: 10px;
+            }}
+            h1 {{
+                font-size: 26px;
+                color: #005fb8;
+                border-bottom: 2px solid #edebe9;
+                padding-bottom: 10px;
+                margin-top: 5px;
+                margin-bottom: 25px;
+                font-weight: normal;
+            }}
+            h2 {{
+                font-size: 18px;
+                color: #201f1e;
+                background-color: #f8f8f8;
+                border-left: 5px solid #005fb8;
+                padding: 8px 15px;
+                margin-top: 35px;
+                margin-bottom: 20px;
+                font-weight: 600;
+            }}
+            h3 {{
+                font-size: 16px;
+                color: #323130;
+                margin-top: 25px;
+                margin-bottom: 10px;
+                font-weight: 600;
+            }}
+            ul {{
+                margin-top: 5px;
+                margin-bottom: 20px;
+                padding-left: 25px;
+            }}
+            li {{
+                margin-bottom: 10px;
+            }}
+            p {{
+                margin-top: 0;
+                margin-bottom: 15px;
+            }}
+            strong {{
+                font-weight: bold;
+                color: #201f1e;
+            }}
+            blockquote {{
+                background-color: #fff9e6;
+                border-left: 4px solid #ffcc00;
+                padding: 12px 20px;
+                margin: 20px 0;
+                color: #323130;
+            }}
+        </style>
+        </head>
+        <body>
+            {html}
+        </body>
+        </html>
+        """
+        return styled_html
 
     def get_readme_path(self):
         if hasattr(sys, '_MEIPASS'):
