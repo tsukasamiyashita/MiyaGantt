@@ -453,6 +453,7 @@ class GanttApp(QMainWindow, HistoryManagerMixin, FileManagerMixin, PrintManagerM
 
     def get_summary_headers(self, base_date=None, count=None):
         if base_date is None: base_date = self.min_date
+        base_date = base_date.replace(hour=0, minute=0, second=0, microsecond=0)
         if count is None:
             if self.zoom_unit == 0:
                 visible_days = self.zoom_count * 7
@@ -543,43 +544,77 @@ class GanttApp(QMainWindow, HistoryManagerMixin, FileManagerMixin, PrintManagerM
                         item_s.setBackground(QColor(255, 255, 255))
                 
                 if self.summary_visible:
-                    self.table.setColumnWidth(col_idx, 90)
+                    self.table.setColumnWidth(col_idx, 100)
                 self.table.setColumnHidden(col_idx, not self.summary_visible)
                 
         self.table.blockSignals(False)
 
     def get_task_workload_in_range(self, t, start_idx, timeline_start=None, timeline_end=None):
-        day_map = {}
         if timeline_start is None: timeline_start = self.min_date
         if timeline_end is None: timeline_end = self.min_date + timedelta(days=self.display_days - 1)
         
-        tasks_to_sum = [t]
+        timeline_start = timeline_start.replace(hour=0, minute=0, second=0, microsecond=0)
+        timeline_end = timeline_end.replace(hour=0, minute=0, second=0, microsecond=0)
+        
         if t.get('is_group'):
-            tasks_to_sum = []
+            manual_total = 0.0
+            auto_total = 0.0
             for i in range(start_idx + 1, len(self.tasks)):
                 if self.tasks[i].get('is_group'): break
-                tasks_to_sum.append(self.tasks[i])
+                child = self.tasks[i]
+                mode = child.get('mode', 'manual')
+                if mode == 'manual':
+                    hc = float(child.get('headcount', 1.0)) * float(child.get('efficiency', 1.0))
+                    t_color = child.get('color', '#808080')
+                    t_color_name = QColor(t_color).name()
+                    for p in child.get('periods', []):
+                        if not p.get('start_date') or not p.get('end_date'): continue
+                        try:
+                            psd = datetime.strptime(p['start_date'], "%Y-%m-%d")
+                            ped = datetime.strptime(p['end_date'], "%Y-%m-%d")
+                            calc_start = max(psd, timeline_start)
+                            calc_end = min(ped, timeline_end)
+                            if calc_start <= calc_end:
+                                p_color = p.get('color')
+                                if p_color and QColor(p_color).name() != t_color_name:
+                                    continue
+                                overlap = (calc_end - calc_start).days + 1
+                                manual_total += (overlap * hc)
+                        except ValueError:
+                            pass
+                elif mode == 'auto':
+                    allocs = child.get('daily_allocations', {})
+                    if allocs:
+                        curr = timeline_start
+                        while curr <= timeline_end:
+                            d_str = curr.strftime("%Y-%m-%d")
+                            auto_total += allocs.get(d_str, 0.0)
+                            curr += timedelta(days=1)
+            return {'is_group_summary': True, 'manual': manual_total, 'auto': auto_total}
         
-        for task in tasks_to_sum:
-            if task.get('mode') in ['auto', 'memo', 'heading']:
+        day_map = {}
+        if t.get('mode') in ['auto', 'memo', 'heading']:
+            return day_map
+            
+        t_color = t.get('color', '#808080')
+        t_color_name = QColor(t_color).name()
+        hc = float(t.get('headcount', 1.0)) * float(t.get('efficiency', 1.0))
+            
+        for p in t.get('periods', []):
+            if not p.get('start_date') or not p.get('end_date'): continue
+            try:
+                psd = datetime.strptime(p['start_date'], "%Y-%m-%d")
+                ped = datetime.strptime(p['end_date'], "%Y-%m-%d")
+                calc_start = max(psd, timeline_start)
+                calc_end = min(ped, timeline_end)
+                if calc_start <= calc_end:
+                    p_color = p.get('color')
+                    if p_color and QColor(p_color).name() != t_color_name:
+                        continue
+                    overlap = (calc_end - calc_start).days + 1
+                    day_map[t_color] = day_map.get(t_color, 0) + (overlap * hc)
+            except ValueError:
                 continue
-                
-            t_color = task.get('color', '#808080')
-            hc = task.get('headcount', 1.0) * task.get('efficiency', 1.0)
-                
-            for p in task.get('periods', []):
-                if not p.get('start_date') or not p.get('end_date'): continue
-                try:
-                    psd = datetime.strptime(p['start_date'], "%Y-%m-%d")
-                    ped = datetime.strptime(p['end_date'], "%Y-%m-%d")
-                    overlap = (min(ped, timeline_end) - max(psd, timeline_start)).days + 1
-                    if overlap > 0:
-                        p_color = p.get('color')
-                        if p_color and p_color.lower() != t_color.lower():
-                            continue
-                        day_map[t_color] = day_map.get(t_color, 0) + (overlap * hc)
-                except ValueError:
-                    continue
         return day_map
 
     def sync_table_from_tasks(self):
@@ -830,7 +865,7 @@ class GanttApp(QMainWindow, HistoryManagerMixin, FileManagerMixin, PrintManagerM
         for i in range(base_col_count, total_cols):
             self.table.setColumnHidden(i, not self.summary_visible)
             if self.summary_visible:
-                self.table.setColumnWidth(i, 90)
+                self.table.setColumnWidth(i, 100)
 
         self.update_selection_mark()
         self.table.blockSignals(False)
@@ -1124,7 +1159,16 @@ class GanttApp(QMainWindow, HistoryManagerMixin, FileManagerMixin, PrintManagerM
                     return name
         return "不明"
 
-    def format_summary_workload(self, day_map):
+    def format_summary_workload(self, data):
+        if isinstance(data, dict) and data.get('is_group_summary'):
+            m = data['manual']
+            a = data['auto']
+            diff = m - a
+            if m == 0 and a == 0:
+                return "-"
+            return f"人:{m:g} 案:{a:g}\n差:{diff:g}"
+
+        day_map = data
         if not day_map: return "0工数"
         total = sum(day_map.values())
         total_str = f"{total:g}"
