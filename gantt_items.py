@@ -127,8 +127,16 @@ class GanttBarItem(QGraphicsRectItem):
                 
                 if val > 0.001 or is_custom:
                     cumulative_val += val
-                    disp_val = round(cumulative_val, 2)
-                    text = f"{disp_val:g}工数" if dw >= 40 else f"{disp_val:g}"
+                    disp_val = round(val, 2)
+                    disp_cum = round(cumulative_val, 2)
+                    
+                    if dw >= 50:
+                        text = f"{disp_val:g} ({disp_cum:g})"
+                    elif dw >= 35:
+                        text = f"{disp_val:g}/{disp_cum:g}"
+                    else:
+                        text = f"{disp_val:g}"
+                        
                     rx = self.rect().left() + i * dw
                     t_rect = QRectF(rx, self.rect().top(), dw, h)
                     
