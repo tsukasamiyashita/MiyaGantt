@@ -126,6 +126,13 @@ class GanttApp(QMainWindow, HistoryManagerMixin, FileManagerMixin, PrintManagerM
         self.mode_combo.addItems(["人員モード (手動)", "案件モード (自動)", "メモモード", "見出し"])
         tl.addWidget(self.mode_combo)
         
+        tl.addWidget(QLabel(" ｜ 案件表示:"))
+        self.auto_disp_combo = QComboBox()
+        self.auto_disp_combo.addItems(["日別/累積", "日別のみ", "累積のみ", "非表示"])
+        self.auto_disp_combo.currentIndexChanged.connect(self.on_auto_disp_changed)
+        tl.addWidget(self.auto_disp_combo)
+        self.auto_disp_mode = 0
+        
         tl.addStretch()
         
         tl.addWidget(QLabel("1画面の表示枠:"))
@@ -377,6 +384,10 @@ class GanttApp(QMainWindow, HistoryManagerMixin, FileManagerMixin, PrintManagerM
         self.update_display_days()
         self.calculate_day_width()
         self.update_ui()
+
+    def on_auto_disp_changed(self, idx):
+        self.auto_disp_mode = idx
+        self.draw_chart()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -862,6 +873,11 @@ class GanttApp(QMainWindow, HistoryManagerMixin, FileManagerMixin, PrintManagerM
                 if new_mode_en == 'auto':
                     if not t.get('auto_start_date') and t.get('periods'):
                         t['auto_start_date'] = t['periods'][0].get('start_date', '')
+                    if not t.get('auto_start_date'):
+                        scroll_val = self.chart_view.horizontalScrollBar().value()
+                        days_scrolled = scroll_val / self.day_width if getattr(self, 'day_width', 0) > 0 else 0
+                        visible_start = self.min_date + timedelta(days=days_scrolled)
+                        t['auto_start_date'] = visible_start.strftime("%Y-%m-%d")
                     if 'workload' not in t:
                         t['workload'] = 1.0 
                     t['headcount'] = 0.0

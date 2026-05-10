@@ -1,156 +1,25 @@
-# file_manager.py
-import os
+# tsukasamiyashita/miyagantt/MiyaGantt-46a1664b6d1737cb32f1dd17429ce06cca8dc678/file_manager.py
 import json
+import os
 from datetime import datetime, timedelta
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 from PySide6.QtCore import QTimer
 
 class FileManagerMixin:
-    def save_data(self):
-        if hasattr(self, 'last_path') and self.last_path:
-            self._perform_save(self.last_path)
-        else:
-            self.save_data_as()
-
-    def save_data_as(self):
-        initial_dir = os.path.dirname(self.last_path) if hasattr(self, 'last_path') and self.last_path and os.path.exists(os.path.dirname(self.last_path)) else ""
-        p = QFileDialog.getSaveFileName(self, "名前を付けて保存", initial_dir, "JSON (*.json)")[0]
-        if p:
-            self.last_path = p
-            self._perform_save(p)
-
-    def _perform_save(self, path):
-        try:
-            scroll_val = self.chart_view.horizontalScrollBar().value()
-            days_scrolled = round(scroll_val / self.day_width) if getattr(self, 'day_width', 0) > 0 else 0
-            visible_start = self.min_date + timedelta(days=days_scrolled)
-
-            data_to_save = {
-                "project_title": getattr(self, 'project_title', ""),
-                "settings": {
-                    "min_date": self.min_date.strftime("%Y-%m-%d"),
-                    "max_date": self.max_date.strftime("%Y-%m-%d") if getattr(self, 'max_date', None) else None,
-                    "display_unit": self.display_unit,
-                    "display_count": self.display_count,
-                    "zoom_unit": self.zoom_unit,
-                    "zoom_count": self.zoom_count,
-                    "custom_holidays": getattr(self, 'custom_holidays', {}),
-                    "last_visible_start": visible_start.strftime("%Y-%m-%d")
-                },
-                "tasks": self.tasks
-            }
-            with open(path, 'w', encoding='utf-8') as f:
-                json.dump(data_to_save, f, ensure_ascii=False, indent=4)
-            self.statusBar().showMessage(f"保存しました: {os.path.basename(path)}", 5000)
-        except Exception as e:
-            QMessageBox.critical(self, "エラー", f"保存失敗: {e}")
-
-    def load_data(self):
-        initial_dir = os.path.dirname(self.last_path) if hasattr(self, 'last_path') and self.last_path and os.path.exists(os.path.dirname(self.last_path)) else ""
-        p = QFileDialog.getOpenFileName(self, "開く", initial_dir, "JSON (*.json)")[0]
-        if p:
-            self.last_path = p
-            try:
-                with open(p, 'r', encoding='utf-8') as f:
-                    loaded_data = json.load(f)
-                
-                last_visible_start_str = None
-
-                if isinstance(loaded_data, dict) and "tasks" in loaded_data:
-                    self.project_title = loaded_data.get("project_title", "")
-                    self.title_edit.blockSignals(True)
-                    self.title_edit.setText(self.project_title)
-                    self.title_edit.blockSignals(False)
-                    self.on_title_changed(self.project_title)
-
-                    self.tasks = loaded_data["tasks"]
-                    settings = loaded_data.get("settings", {})
-                    min_date_str = settings.get("min_date")
-                    max_date_str = settings.get("max_date")
-                    if min_date_str:
-                        self.min_date = datetime.strptime(min_date_str, "%Y-%m-%d")
-                    else:
-                        self.min_date = datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-                    
-                    if max_date_str:
-                        self.max_date = datetime.strptime(max_date_str, "%Y-%m-%d")
-                    else:
-                        self.max_date = None
-                    
-                    self.display_unit = settings.get("display_unit")
-                    self.display_count = settings.get("display_count")
-                    
-                    if self.display_unit is None or self.display_count is None:
-                        if "display_months" in settings:
-                            self.display_unit = 1
-                            self.display_count = settings["display_months"]
-                        else:
-                            days = settings.get("display_days", 150)
-                            self.display_unit = 1
-                            self.display_count = max(1, round(days / 30))
-                    
-                    self.zoom_unit = settings.get("zoom_unit", 1)
-                    self.zoom_count = settings.get("zoom_count", 1)
-                    self.custom_holidays = settings.get("custom_holidays", {})
-                    
-                    self.zoom_unit_combo.blockSignals(True)
-                    self.zoom_count_spin.blockSignals(True)
-                    self.zoom_unit_combo.setCurrentIndex(self.zoom_unit)
-                    self.zoom_count_spin.setValue(self.zoom_count)
-                    self.zoom_unit_combo.blockSignals(False)
-                    self.zoom_count_spin.blockSignals(False)
-                    
-                    self.calculate_day_width()
-                    self.update_display_days()
-                    
-                    last_visible_start_str = settings.get("last_visible_start")
-                else:
-                    self.tasks = loaded_data
-                    self.project_title = ""
-                    self.title_edit.blockSignals(True)
-                    self.title_edit.setText("")
-                    self.title_edit.blockSignals(False)
-                    self.on_title_changed("")
-
-                    self.min_date = datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-                    self.display_unit = 1
-                    self.display_count = 6
-                    self.zoom_unit = 1
-                    self.zoom_count = 1
-                    self.calculate_day_width()
-                    self.update_display_days()
-                    last_visible_start_str = None
-                    
-                self.recalculate_auto_tasks()
-                self.update_ui()
-                self.init_history()
-                
-                if last_visible_start_str:
-                    try:
-                        target_date = datetime.strptime(last_visible_start_str, "%Y-%m-%d")
-                        QTimer.singleShot(50, lambda: self._scroll_to_specific_date(target_date))
-                    except ValueError:
-                        pass
-            except Exception as e:
-                QMessageBox.critical(self, "エラー", f"読込失敗: {e}")
+    def get_config_path(self):
+        return os.path.join(os.path.expanduser("~"), ".miyagantt_config.json")
 
     def save_app_config(self):
-        config_dir = os.path.join(os.environ.get('USERPROFILE', os.path.expanduser('~')), 'MiyaGantt')
-        if not os.path.exists(config_dir):
-            try:
-                os.makedirs(config_dir)
-            except Exception as e:
-                QMessageBox.warning(self, "エラー", f"フォルダの作成に失敗しました: {e}")
-                return
-        
-        path = os.path.join(config_dir, 'config.json')
-        
-        column_visibility = {}
         column_widths = {}
-        for i in range(8):
-            column_visibility[str(i)] = not self.table.isColumnHidden(i)
-            column_widths[str(i)] = self.table.columnWidth(i)
-        
+        if hasattr(self, 'table'):
+            for i in range(self.table.columnCount()):
+                column_widths[str(i)] = self.table.columnWidth(i)
+                
+        column_visibility = {}
+        if hasattr(self, 'col_actions'):
+            for idx, btn in self.col_actions.items():
+                column_visibility[str(idx)] = btn.isChecked()
+
         config = {
             "zoom_unit": getattr(self, 'zoom_unit', 1),
             "zoom_count": getattr(self, 'zoom_count', 1),
@@ -159,27 +28,27 @@ class FileManagerMixin:
             "summary_visible": getattr(self, 'summary_visible', True),
             "column_visibility": column_visibility,
             "column_widths": column_widths,
-            "splitter_sizes": self.splitter.sizes(),
+            "splitter_sizes": self.splitter.sizes() if hasattr(self, 'splitter') else [],
             "custom_holidays": getattr(self, 'custom_holidays', {}),
-            "last_path": getattr(self, 'last_path', "")
+            "last_path": getattr(self, 'last_path', ""),
+            "auto_disp_mode": getattr(self, 'auto_disp_mode', 0)
         }
         
         try:
-            with open(path, 'w', encoding='utf-8') as f:
-                json.dump(config, f, ensure_ascii=False, indent=4)
-            QMessageBox.information(self, "完了", f"基本設定を保存しました:\n{path}")
+            with open(self.get_config_path(), 'w', encoding='utf-8') as f:
+                json.dump(config, f, ensure_ascii=False, indent=2)
+            QMessageBox.information(self, "設定保存", "現在の表示設定を保存しました。")
         except Exception as e:
-            QMessageBox.warning(self, "エラー", f"設定の保存に失敗しました: {e}")
+            QMessageBox.warning(self, "エラー", f"設定の保存に失敗しました。\n{e}")
 
     def load_app_config(self):
-        config_dir = os.path.join(os.environ.get('USERPROFILE', os.path.expanduser('~')), 'MiyaGantt')
-        path = os.path.join(config_dir, 'config.json')
-        if not os.path.exists(path): return
+        config_path = self.get_config_path()
+        if not os.path.exists(config_path): return
         
         try:
-            with open(path, 'r', encoding='utf-8') as f:
+            with open(config_path, 'r', encoding='utf-8') as f:
                 config = json.load(f)
-            
+                
             self.zoom_unit = config.get("zoom_unit", getattr(self, 'zoom_unit', 1))
             self.zoom_count = config.get("zoom_count", getattr(self, 'zoom_count', 1))
             self.display_unit = config.get("display_unit", getattr(self, 'display_unit', 1))
@@ -187,15 +56,7 @@ class FileManagerMixin:
             self.summary_visible = config.get("summary_visible", getattr(self, 'summary_visible', True))
             self.custom_holidays = config.get("custom_holidays", getattr(self, 'custom_holidays', {}))
             self.last_path = config.get("last_path", "")
-            
-            column_widths = config.get("column_widths", {})
-            for idx_str, width in column_widths.items():
-                if int(idx_str) < 8:
-                    self.table.setColumnWidth(int(idx_str), width)
-            
-            splitter_sizes = config.get("splitter_sizes")
-            if splitter_sizes:
-                self.splitter.setSizes(splitter_sizes)
+            self.auto_disp_mode = config.get("auto_disp_mode", getattr(self, 'auto_disp_mode', 0))
             
             if hasattr(self, 'zoom_unit_combo'):
                 self.zoom_unit_combo.blockSignals(True)
@@ -205,10 +66,116 @@ class FileManagerMixin:
                 self.zoom_count_spin.blockSignals(True)
                 self.zoom_count_spin.setValue(self.zoom_count)
                 self.zoom_count_spin.blockSignals(False)
-            
+            if hasattr(self, 'auto_disp_combo'):
+                self.auto_disp_combo.blockSignals(True)
+                self.auto_disp_combo.setCurrentIndex(self.auto_disp_mode)
+                self.auto_disp_combo.blockSignals(False)
+                
+            column_widths = config.get("column_widths", {})
+            if hasattr(self, 'table'):
+                for i_str, w in column_widths.items():
+                    try:
+                        self.table.setColumnWidth(int(i_str), w)
+                    except ValueError:
+                        pass
+                        
             col_vis = config.get("column_visibility", {})
-            for idx_str, visible in col_vis.items():
-                if int(idx_str) < 8:
-                    self.toggle_column_visibility(int(idx_str), visible)
+            if hasattr(self, 'col_actions'):
+                for idx_str, is_vis in col_vis.items():
+                    try:
+                        idx = int(idx_str)
+                        if idx in self.col_actions:
+                            self.col_actions[idx].blockSignals(True)
+                            self.col_actions[idx].setChecked(is_vis)
+                            self.col_actions[idx].blockSignals(False)
+                            self.toggle_column_visibility(idx, is_vis)
+                    except ValueError:
+                        pass
+                        
+            splitter_sizes = config.get("splitter_sizes", [])
+            if splitter_sizes and hasattr(self, 'splitter'):
+                self.splitter.setSizes(splitter_sizes)
+                
+            self.update_display_range()
+            
         except Exception as e:
-            print(f"Config load error: {e}")
+            print(f"設定の読み込みに失敗しました: {e}")
+
+    def load_data(self):
+        start_dir = os.path.dirname(self.last_path) if self.last_path else ""
+        file_path, _ = QFileDialog.getOpenFileName(self, "ファイルを開く", start_dir, "JSON Files (*.json);;All Files (*)")
+        if not file_path: return
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            self.project_title = data.get('project_title', '')
+            self.title_edit.blockSignals(True)
+            self.title_edit.setText(self.project_title)
+            self.on_title_changed(self.project_title)
+            self.title_edit.blockSignals(False)
+            
+            min_date_str = data.get('min_date', datetime.now().strftime("%Y-%m-%d"))
+            self.min_date = datetime.strptime(min_date_str, "%Y-%m-%d")
+            
+            max_date_str = data.get('max_date', (self.min_date + timedelta(days=180)).strftime("%Y-%m-%d"))
+            self.max_date = datetime.strptime(max_date_str, "%Y-%m-%d")
+            
+            self.tasks = data.get('tasks', [])
+            self.last_path = file_path
+            
+            self.update_display_days()
+            self.calculate_day_width()
+            self.recalculate_auto_tasks()
+            self.update_ui()
+            self.init_history()
+            
+            scroll_date_str = data.get('scroll_date')
+            if scroll_date_str:
+                try:
+                    target_date = datetime.strptime(scroll_date_str, "%Y-%m-%d")
+                    QTimer.singleShot(100, lambda: self._scroll_to_specific_date(target_date))
+                except ValueError:
+                    pass
+            
+        except Exception as e:
+            QMessageBox.warning(self, "エラー", f"ファイルの読み込みに失敗しました。\n{e}")
+
+    def save_data(self):
+        if not self.last_path:
+            self.save_data_as()
+            return
+            
+        self._perform_save(self.last_path)
+
+    def save_data_as(self):
+        start_dir = os.path.dirname(self.last_path) if self.last_path else ""
+        file_path, _ = QFileDialog.getSaveFileName(self, "名前を付けて保存", start_dir, "JSON Files (*.json);;All Files (*)")
+        if not file_path: return
+        
+        self._perform_save(file_path)
+
+    def _perform_save(self, file_path):
+        scroll_val = self.chart_view.horizontalScrollBar().value()
+        if getattr(self, 'day_width', 0) > 0:
+            days_scrolled = round(scroll_val / self.day_width)
+        else:
+            days_scrolled = 0
+            
+        visible_start = getattr(self, 'min_date', datetime.now()) + timedelta(days=days_scrolled)
+        
+        data = {
+            'project_title': getattr(self, 'project_title', ''),
+            'min_date': getattr(self, 'min_date', datetime.now()).strftime("%Y-%m-%d"),
+            'max_date': getattr(self, 'max_date', datetime.now() + timedelta(days=180)).strftime("%Y-%m-%d"),
+            'scroll_date': visible_start.strftime("%Y-%m-%d"),
+            'tasks': getattr(self, 'tasks', [])
+        }
+        try:
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            self.last_path = file_path
+            QMessageBox.information(self, "保存", "ファイルを保存しました。")
+        except Exception as e:
+            QMessageBox.warning(self, "エラー", f"ファイルの保存に失敗しました。\n{e}")

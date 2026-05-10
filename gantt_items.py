@@ -130,12 +130,20 @@ class GanttBarItem(QGraphicsRectItem):
                     disp_val = round(val, 2)
                     disp_cum = round(cumulative_val, 2)
                     
-                    if dw >= 50:
-                        text = f"{disp_val:g} ({disp_cum:g})"
-                    elif dw >= 35:
-                        text = f"{disp_val:g}/{disp_cum:g}"
-                    else:
+                    disp_mode = getattr(self.app, 'auto_disp_mode', 0)
+                    if disp_mode == 3:
+                        text = ""
+                    elif disp_mode == 1:
                         text = f"{disp_val:g}"
+                    elif disp_mode == 2:
+                        text = f"{disp_cum:g}"
+                    else:
+                        if dw >= 50:
+                            text = f"{disp_val:g} ({disp_cum:g})"
+                        elif dw >= 35:
+                            text = f"{disp_val:g}/{disp_cum:g}"
+                        else:
+                            text = f"{disp_val:g}"
                         
                     rx = self.rect().left() + i * dw
                     t_rect = QRectF(rx, self.rect().top(), dw, h)
@@ -146,7 +154,8 @@ class GanttBarItem(QGraphicsRectItem):
                     else:
                         painter.setPen(Qt.white)
                         
-                    painter.drawText(t_rect, Qt.AlignCenter, text)
+                    if text:
+                        painter.drawText(t_rect, Qt.AlignCenter, text)
             
             painter.restore()
 

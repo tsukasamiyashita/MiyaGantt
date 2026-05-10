@@ -350,6 +350,11 @@ class TaskManagerMixin:
                 t['daily_allocations'] = at.get('daily_allocations', {})
 
     def add_task(self):
+        scroll_val = self.chart_view.horizontalScrollBar().value()
+        days_scrolled = scroll_val / self.day_width if getattr(self, 'day_width', 0) > 0 else 0
+        visible_start = getattr(self, 'min_date', datetime.now()) + timedelta(days=days_scrolled)
+        visible_start_str = visible_start.strftime("%Y-%m-%d")
+
         mode_idx = self.mode_combo.currentIndex()
         if mode_idx == 0: 
             mode = "manual"
@@ -372,7 +377,7 @@ class TaskManagerMixin:
         }
         
         if mode == "auto":
-            t["auto_start_date"] = self.min_date.strftime("%Y-%m-%d")
+            t["auto_start_date"] = visible_start_str
             t["workload"] = 1.0 
             t["periods"] = [{"start_date": t["auto_start_date"], "end_date": t["auto_start_date"], "color": color}]
             t["headcount"] = 0.0
