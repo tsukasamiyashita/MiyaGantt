@@ -225,7 +225,9 @@ class TaskManagerMixin:
             days_simulated = 0
             
             has_speed = any(s > 0 for s in daily_speed.values())
-            if not has_speed:
+            has_custom = any(t.get('custom_allocations') for t in tasks if t.get('mode') == 'auto')
+            
+            if not has_speed and not has_custom:
                 for at in auto_tasks:
                     t = at['task']
                     sd_str = at['start'].strftime("%Y-%m-%d")
@@ -233,11 +235,20 @@ class TaskManagerMixin:
                     t['periods'] = [{"start_date": sd_str, "end_date": sd_str, "color": "#d13438", "text": f"⚠️ 進行不可 (不足: {rem:g}工数)"}]
                 continue
                 
-            max_speed_date_str = max(daily_speed.keys())
-            max_speed_date = datetime.strptime(max_speed_date_str, "%Y-%m-%d")
+            max_speed_date_str = max(daily_speed.keys()) if daily_speed else "2000-01-01"
+            custom_dates = []
+            for at in auto_tasks:
+                custom_dates.extend(at['task'].get('custom_allocations', {}).keys())
+            max_custom_date_str = max(custom_dates) if custom_dates else "2000-01-01"
+            max_date_str = max(max_speed_date_str, max_custom_date_str)
+            
+            try:
+                max_sim_date = datetime.strptime(max_date_str, "%Y-%m-%d")
+            except ValueError:
+                max_sim_date = current_date + timedelta(days=365)
             
             while any(at['rem_work'] > 0 for at in auto_tasks) and days_simulated < max_days:
-                if current_date > max_speed_date:
+                if current_date > max_sim_date:
                     break
                     
                 d_str = current_date.strftime("%Y-%m-%d")
@@ -247,10 +258,30 @@ class TaskManagerMixin:
                 
                 for at in active_tasks:
                     at['daily_assigned'] = 0.0
+                    at['is_custom_today'] = False
                 
-                if active_tasks and avail_res > 0.001:
+                for at in active_tasks:
+                    custom_allocs = at['task'].get('custom_allocations', {})
+                    if d_str in custom_allocs:
+                        c_val = max(0.0, float(custom_allocs[d_str]))
+                        
+                        at['rem_work'] -= c_val
+                        avail_res -= c_val
+                        at['daily_assigned'] += c_val
+                        if c_val > 0.0001:
+                            at['last_progress'] = current_date
+                        at['daily_allocations'][d_str] = c_val
+                        at['is_custom_today'] = True
+                            
+                        if at['rem_work'] <= 0.001:
+                            at['rem_work'] = 0.0
+                            at['end'] = current_date
+                
+                avail_res = max(0.0, avail_res)
+
+                tasks_to_allocate = [at for at in active_tasks if at['rem_work'] > 0 and not at['is_custom_today']]
+                if tasks_to_allocate and avail_res > 0.001:
                     unallocated_res = avail_res
-                    tasks_to_allocate = active_tasks.copy()
                     
                     while tasks_to_allocate and unallocated_res > 0.001:
                         alloc_per_task = unallocated_res / len(tasks_to_allocate)

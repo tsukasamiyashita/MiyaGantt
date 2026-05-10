@@ -1,7 +1,7 @@
 # tsukasamiyashita/miyagantt/MiyaGantt-46a1664b6d1737cb32f1dd17429ce06cca8dc678/gantt_items.py
 from datetime import datetime, timedelta
 from PySide6.QtWidgets import (QGraphicsItem, QGraphicsRectItem, QGraphicsTextItem, QGraphicsScene, 
-                               QMenu, QLineEdit, QInputDialog, QStyle)
+                               QMenu, QLineEdit, QInputDialog, QStyle, QMessageBox)
 from PySide6.QtCore import Qt, QRectF, QTimer, QPointF
 from PySide6.QtGui import QBrush, QPen, QColor, QFont, QPainter
 from dialogs import ColorGridDialog
@@ -114,22 +114,30 @@ class GanttBarItem(QGraphicsRectItem):
             font = QFont("Segoe UI", max(6, min(9, int(dw/3))))
             painter.setFont(font)
             
-            painter.setPen(Qt.white)
-            
             h = self.rect().height()
             
             sd_str = sd.strftime("%Y-%m-%d")
             cumulative_val = sum(v for k, v in allocs.items() if k < sd_str)
+            custom_allocs = self.task.get('custom_allocations', {})
             
             for i in range(days):
                 d_str = (sd + timedelta(days=i)).strftime("%Y-%m-%d")
                 val = allocs.get(d_str, 0.0)
-                if val > 0.001:
+                is_custom = d_str in custom_allocs
+                
+                if val > 0.001 or is_custom:
                     cumulative_val += val
                     disp_val = round(cumulative_val, 2)
                     text = f"{disp_val:g}工数" if dw >= 40 else f"{disp_val:g}"
                     rx = self.rect().left() + i * dw
                     t_rect = QRectF(rx, self.rect().top(), dw, h)
+                    
+                    if is_custom:
+                        painter.fillRect(t_rect, QColor(255, 165, 0, 100))
+                        painter.setPen(QColor(255, 255, 100))
+                    else:
+                        painter.setPen(Qt.white)
+                        
                     painter.drawText(t_rect, Qt.AlignCenter, text)
             
             painter.restore()
@@ -364,6 +372,43 @@ class GanttBarItem(QGraphicsRectItem):
         super().mouseDoubleClickEvent(event)
         
         if self.task.get('mode') == 'auto':
+            x = event.pos().x()
+            dw = self.app.day_width
+            day_offset = int(x / dw)
+            
+            p_dict = self.period_dict
+            try:
+                sd = datetime.strptime(p_dict.get('start_date', ''), "%Y-%m-%d")
+                target_date = sd + timedelta(days=day_offset)
+                target_date_str = target_date.strftime("%Y-%m-%d")
+            except ValueError:
+                return
+                
+            current_val = ""
+            if 'custom_allocations' in self.task and target_date_str in self.task['custom_allocations']:
+                current_val = str(self.task['custom_allocations'][target_date_str])
+                
+            text, ok = QInputDialog.getText(self.app, "日別工数の編集", f"{target_date_str} の工数\n(空欄で自動計算に戻す):", QLineEdit.Normal, current_val)
+            if ok:
+                if 'custom_allocations' not in self.task:
+                    self.task['custom_allocations'] = {}
+                
+                text = text.strip()
+                if text == "":
+                    if target_date_str in self.task['custom_allocations']:
+                        del self.task['custom_allocations'][target_date_str]
+                else:
+                    try:
+                        val = float(text)
+                        self.task['custom_allocations'][target_date_str] = val
+                    except ValueError:
+                        QMessageBox.warning(self.app, "エラー", "数値を入力してください。")
+                        return
+                
+                self.app.recalculate_auto_tasks()
+                self.app.sync_table_from_tasks()
+                self.app.update_ui()
+                self.app.save_state_if_changed()
             return
             
         if 'periods' not in self.task:
@@ -386,7 +431,29 @@ class GanttBarItem(QGraphicsRectItem):
         
         copy_action = None
         cut_action = None
-        if self.task.get('mode') in ['manual', 'memo', 'heading']:
+        reset_day_action = None
+        reset_all_action = None
+        
+        is_auto = self.task.get('mode') == 'auto'
+        target_date_str = None
+        
+        if is_auto:
+            x = event.pos().x()
+            dw = self.app.day_width
+            day_offset = int(x / dw)
+            p_dict = self.period_dict
+            try:
+                sd = datetime.strptime(p_dict.get('start_date', ''), "%Y-%m-%d")
+                target_date_str = (sd + timedelta(days=day_offset)).strftime("%Y-%m-%d")
+            except ValueError:
+                target_date_str = None
+
+            custom_allocs = self.task.get('custom_allocations', {})
+            if target_date_str and target_date_str in custom_allocs:
+                reset_day_action = menu.addAction(f"この日の手動工数をリセット")
+            if custom_allocs:
+                reset_all_action = menu.addAction("すべての手動工数をリセット")
+        elif self.task.get('mode') in ['manual', 'memo', 'heading']:
             copy_action = menu.addAction("コピー")
             cut_action = menu.addAction("切り取り")
             
@@ -423,6 +490,19 @@ class GanttBarItem(QGraphicsRectItem):
                 self.task['periods'][self.period_index]['color'] = dlg.selected_color
                 self.app.update_ui()
                 self.app.save_state_if_changed()
+        elif reset_day_action and action == reset_day_action:
+            if target_date_str and target_date_str in self.task.get('custom_allocations', {}):
+                del self.task['custom_allocations'][target_date_str]
+                self.app.recalculate_auto_tasks()
+                self.app.sync_table_from_tasks()
+                self.app.update_ui()
+                self.app.save_state_if_changed()
+        elif reset_all_action and action == reset_all_action:
+            self.task['custom_allocations'] = {}
+            self.app.recalculate_auto_tasks()
+            self.app.sync_table_from_tasks()
+            self.app.update_ui()
+            self.app.save_state_if_changed()
         elif copy_action and action == copy_action:
             self.app.clipboard_periods = [p['copy_data'] for p in pre_copied_periods]
         elif cut_action and action == cut_action:
