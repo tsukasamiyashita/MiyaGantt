@@ -176,45 +176,58 @@ class SummaryDialog(QDialog):
         table.setRowCount(len(group_data) + 1)
         table.setHorizontalHeaderLabels(["グループ名"] + [h[2] for h in headers])
         
-        total_period_maps = [{} for _ in range(len(headers))]
+        total_period_maps = [{'is_group_summary': True, 'manual': 0.0, 'auto': 0.0} for _ in range(len(headers))]
         
         for r, g in enumerate(group_data):
             table.setItem(r, 0, QTableWidgetItem(g['name']))
             for c, (h_start, h_end, label) in enumerate(headers):
-                color_map = {}
-                for t in g['tasks']:
-                    if t.get('mode') in ['auto', 'memo']:
-                        continue
-                    t_color = t.get('color', '#0000ff')
-                    hc = float(t.get('headcount', 1.0)) * float(t.get('efficiency', 1.0))
-
-                    for p in t.get('periods', []):
-                        if not p.get('start_date') or not p.get('end_date'): continue
-                        try:
-                            psd = datetime.strptime(p['start_date'], "%Y-%m-%d")
-                            ped = datetime.strptime(p['end_date'], "%Y-%m-%d")
-                            calc_start = max(psd, h_start)
-                            calc_end = min(ped, h_end)
-                            if calc_start <= calc_end:
-                                overlap = (calc_end - calc_start).days + 1
-                                if overlap > 0:
-                                    p_color = p.get('color')
-                                    if p_color and p_color.lower() != t_color.lower():
-                                        continue
-                                    val = overlap * hc
-                                    color_map[t_color] = color_map.get(t_color, 0) + val
-                                    total_period_maps[c][t_color] = total_period_maps[c].get(t_color, 0) + val
-                        except ValueError:
-                            pass
+                manual_total = 0.0
+                auto_total = 0.0
                 
-                if not color_map:
+                for t in g['tasks']:
+                    mode = t.get('mode', 'manual')
+                    if mode == 'manual':
+                        t_color = t.get('color', '#808080')
+                        t_color_name = QColor(t_color).name()
+                        hc = float(t.get('headcount', 1.0)) * float(t.get('efficiency', 1.0))
+
+                        for p in t.get('periods', []):
+                            if not p.get('start_date') or not p.get('end_date'): continue
+                            try:
+                                psd = datetime.strptime(p['start_date'], "%Y-%m-%d")
+                                ped = datetime.strptime(p['end_date'], "%Y-%m-%d")
+                                calc_start = max(psd, h_start)
+                                calc_end = min(ped, h_end)
+                                if calc_start <= calc_end:
+                                    p_color = p.get('color')
+                                    if p_color and QColor(p_color).name() != t_color_name:
+                                        continue
+                                    overlap = (calc_end - calc_start).days + 1
+                                    manual_total += (overlap * hc)
+                            except ValueError:
+                                pass
+                    elif mode == 'auto':
+                        allocs = t.get('daily_allocations', {})
+                        if allocs:
+                            curr_date = h_start
+                            while curr_date <= h_end:
+                                d_str = curr_date.strftime("%Y-%m-%d")
+                                auto_total += allocs.get(d_str, 0.0)
+                                curr_date += timedelta(days=1)
+                
+                total_period_maps[c]['manual'] += manual_total
+                total_period_maps[c]['auto'] += auto_total
+                
+                group_summary = {'is_group_summary': True, 'manual': manual_total, 'auto': auto_total}
+                
+                if manual_total == 0 and auto_total == 0:
                     item = QTableWidgetItem("-")
                 else:
-                    text = self.app.format_summary_workload(color_map)
+                    text = self.app.format_summary_workload(group_summary)
                     item = QTableWidgetItem(text)
                 
                 item.setTextAlignment(Qt.AlignCenter)
-                if color_map:
+                if manual_total > 0 or auto_total > 0:
                     item.setForeground(QColor(0, 0, 255))
                     f = item.font(); f.setBold(True); item.setFont(f)
                 table.setItem(r, c + 1, item)
@@ -226,7 +239,7 @@ class SummaryDialog(QDialog):
         table.setItem(total_row_idx, 0, total_label_item)
         
         for c, color_map in enumerate(total_period_maps):
-            text = self.app.format_summary_workload(color_map) if color_map else "-"
+            text = self.app.format_summary_workload(color_map)
             item = QTableWidgetItem(text)
             item.setTextAlignment(Qt.AlignCenter)
             item.setBackground(QColor(240, 248, 255))
@@ -234,6 +247,7 @@ class SummaryDialog(QDialog):
             table.setItem(total_row_idx, c + 1, item)
         
         table.resizeColumnsToContents()
+        table.resizeRowsToContents()
 
 class HelpDialog(QDialog):
     def __init__(self, parent=None):
