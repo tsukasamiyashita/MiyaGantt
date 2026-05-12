@@ -2,6 +2,7 @@
 import sys
 import os
 import calendar
+import json
 from datetime import datetime, timedelta
 
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
@@ -58,6 +59,19 @@ class GanttApp(QMainWindow, HistoryManagerMixin, FileManagerMixin, PrintManagerM
         self.init_ui()
         self.apply_styles()
         self.update_history_buttons()
+        
+        # 起動時点の状態を保存済みとして記録
+        self.saved_snapshot = self.get_current_data_snapshot()
+
+    def get_current_data_snapshot(self):
+        """現在のデータの状態をJSON文字列として取得（変更検知用）"""
+        data = {
+            'project_title': getattr(self, 'project_title', ''),
+            'min_date': getattr(self, 'min_date', datetime.now()).strftime("%Y-%m-%d"),
+            'max_date': getattr(self, 'max_date', datetime.now()).strftime("%Y-%m-%d"),
+            'tasks': getattr(self, 'tasks', [])
+        }
+        return json.dumps(data, ensure_ascii=False, sort_keys=True)
 
     def apply_styles(self):
         self.setStyleSheet("""
@@ -149,6 +163,9 @@ class GanttApp(QMainWindow, HistoryManagerMixin, FileManagerMixin, PrintManagerM
         self.zoom_count_spin.valueChanged.connect(self.on_zoom_changed)
         tl.addWidget(self.zoom_count_spin)
         
+        self.btn_new = QPushButton("新規作成")
+        self.btn_new.setShortcut("Ctrl+N")
+        self.btn_new.setToolTip("新規作成 (Ctrl+N)")
         self.btn_load = QPushButton("読込")
         self.btn_save = QPushButton("上書き保存")
         self.btn_save_as = QPushButton("名前を付けて保存")
@@ -161,6 +178,7 @@ class GanttApp(QMainWindow, HistoryManagerMixin, FileManagerMixin, PrintManagerM
         self.btn_print = QPushButton("🖨 印刷")
         self.btn_save_config = QPushButton("💾 設定保存")
         self.btn_help = QPushButton("❓ ヘルプ")
+        self.btn_new.clicked.connect(self.new_project)
         self.btn_load.clicked.connect(self.load_data)
         self.btn_save.clicked.connect(self.save_data)
         self.btn_save_as.clicked.connect(self.save_data_as)
@@ -170,6 +188,7 @@ class GanttApp(QMainWindow, HistoryManagerMixin, FileManagerMixin, PrintManagerM
         self.btn_save_config.clicked.connect(self.save_app_config)
         self.btn_help.clicked.connect(self.open_help)
         
+        tl.addWidget(self.btn_new)
         tl.addWidget(self.btn_load)
         tl.addWidget(self.btn_save)
         tl.addWidget(self.btn_save_as)
@@ -321,27 +340,30 @@ class GanttApp(QMainWindow, HistoryManagerMixin, FileManagerMixin, PrintManagerM
         self.setWindowTitle(title_str)
 
     def on_horizontal_scroll(self, v):
-        self.hv.horizontalScrollBar().setValue(v)
-        self.update_month_labels_pos()
-        
-        if not self.chart_view.horizontalScrollBar().isSliderDown():
-            self.snap_timer.start(300)
-        
-        if self.day_width <= 0: return
-        days_scrolled = v / self.day_width
-        visible_start = self.min_date + timedelta(days=days_scrolled)
-        threshold_date = self.get_threshold_date(visible_start)
-        
-        if self.display_unit == 0:
-            base_key = (threshold_date - timedelta(days=threshold_date.weekday())).strftime("%Y-%W")
-        elif self.display_unit == 1:
-            base_key = threshold_date.strftime("%Y-%m")
-        else:
-            base_key = threshold_date.strftime("%Y")
+        try:
+            self.hv.horizontalScrollBar().setValue(v)
+            self.update_month_labels_pos()
             
-        if base_key != self.last_summary_base_key:
-            self.last_summary_base_key = base_key
-            self.sync_summary_to_scroll(threshold_date)
+            if not self.chart_view.horizontalScrollBar().isSliderDown():
+                self.snap_timer.start(300)
+            
+            if self.day_width <= 0: return
+            days_scrolled = v / self.day_width
+            visible_start = self.min_date + timedelta(days=days_scrolled)
+            threshold_date = self.get_threshold_date(visible_start)
+            
+            if self.display_unit == 0:
+                base_key = (threshold_date - timedelta(days=threshold_date.weekday())).strftime("%Y-%W")
+            elif self.display_unit == 1:
+                base_key = threshold_date.strftime("%Y-%m")
+            else:
+                base_key = threshold_date.strftime("%Y")
+                
+            if base_key != self.last_summary_base_key:
+                self.last_summary_base_key = base_key
+                self.sync_summary_to_scroll(threshold_date)
+        except RuntimeError:
+            pass
 
     def snap_horizontal_scroll(self):
         if self.day_width > 0:
@@ -1194,6 +1216,48 @@ class GanttApp(QMainWindow, HistoryManagerMixin, FileManagerMixin, PrintManagerM
             self.col_actions[idx].blockSignals(True)
             self.col_actions[idx].setChecked(visible)
             self.col_actions[idx].blockSignals(False)
+
+    def closeEvent(self, event):
+        # 現在のデータ状態と保存済みスナップショットを比較して確実な変更検知を行う
+        current_snapshot = self.get_current_data_snapshot()
+        is_modified = getattr(self, 'saved_snapshot', "") != current_snapshot
+        
+        if is_modified:
+            reply = QMessageBox.question(
+                self, 
+                '確認', 
+                '未保存の変更があります。保存して終了しますか？\n（「破棄」を選ぶと保存せずに終了します）',
+                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+                QMessageBox.Save
+            )
+
+            if reply == QMessageBox.Save:
+                if not self.last_path:
+                    save_success = self.save_data_as()
+                else:
+                    save_success = self.save_data()
+                    
+                if save_success is True:
+                    self._cleanup_before_close()
+                    event.accept()
+                else:
+                    event.ignore()
+                    
+            elif reply == QMessageBox.Discard:
+                self._cleanup_before_close()
+                event.accept()
+            else:
+                event.ignore()
+        else:
+            self._cleanup_before_close()
+            event.accept()
+
+    def _cleanup_before_close(self):
+        try:
+            if hasattr(self, 'snap_timer'):
+                self.snap_timer.stop()
+        except RuntimeError:
+            pass
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

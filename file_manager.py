@@ -101,6 +101,33 @@ class FileManagerMixin:
         except Exception as e:
             print(f"設定の読み込みに失敗しました: {e}")
 
+    def new_project(self):
+        reply = QMessageBox.question(self, '確認', '現在のデータを破棄して新規プロジェクトを作成しますか？',
+                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            self.project_title = ""
+            if hasattr(self, 'title_edit'):
+                self.title_edit.blockSignals(True)
+                self.title_edit.setText(self.project_title)
+                self.title_edit.blockSignals(False)
+                self.on_title_changed(self.project_title)
+            
+            self.tasks = []
+            self.last_path = ""
+            self.custom_holidays = {}
+            
+            self.min_date = datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            self.update_display_days()
+            self.calculate_day_width()
+            
+            self.recalculate_auto_tasks()
+            self.update_ui()
+            self.init_history()
+            
+            # 新規作成直後の状態を保存済みとして記録
+            if hasattr(self, 'get_current_data_snapshot'):
+                self.saved_snapshot = self.get_current_data_snapshot()
+
     def load_data(self):
         start_dir = os.path.dirname(self.last_path) if self.last_path else ""
         file_path, _ = QFileDialog.getOpenFileName(self, "ファイルを開く", start_dir, "JSON Files (*.json);;All Files (*)")
@@ -131,6 +158,10 @@ class FileManagerMixin:
             self.update_ui()
             self.init_history()
             
+            # 読み込み成功時に保存状態としてマーク
+            if hasattr(self, 'get_current_data_snapshot'):
+                self.saved_snapshot = self.get_current_data_snapshot()
+            
             scroll_date_str = data.get('scroll_date')
             if scroll_date_str:
                 try:
@@ -144,17 +175,17 @@ class FileManagerMixin:
 
     def save_data(self):
         if not self.last_path:
-            self.save_data_as()
-            return
+            return self.save_data_as()
             
-        self._perform_save(self.last_path)
+        return self._perform_save(self.last_path)
 
     def save_data_as(self):
         start_dir = os.path.dirname(self.last_path) if self.last_path else ""
         file_path, _ = QFileDialog.getSaveFileName(self, "名前を付けて保存", start_dir, "JSON Files (*.json);;All Files (*)")
-        if not file_path: return
+        if not file_path:
+            return False
         
-        self._perform_save(file_path)
+        return self._perform_save(file_path)
 
     def _perform_save(self, file_path):
         scroll_val = self.chart_view.horizontalScrollBar().value()
@@ -176,6 +207,13 @@ class FileManagerMixin:
             with open(file_path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
             self.last_path = file_path
+            
+            # 保存成功時に現在のスナップショットを記録
+            if hasattr(self, 'get_current_data_snapshot'):
+                self.saved_snapshot = self.get_current_data_snapshot()
+                
             QMessageBox.information(self, "保存", "ファイルを保存しました。")
+            return True
         except Exception as e:
             QMessageBox.warning(self, "エラー", f"ファイルの保存に失敗しました。\n{e}")
+            return False
