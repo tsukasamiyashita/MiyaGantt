@@ -1218,20 +1218,22 @@ class GanttApp(QMainWindow, HistoryManagerMixin, FileManagerMixin, PrintManagerM
             self.col_actions[idx].blockSignals(False)
 
     def closeEvent(self, event):
-        # 現在のデータ状態と保存済みスナップショットを比較して確実な変更検知を行う
         current_snapshot = self.get_current_data_snapshot()
         is_modified = getattr(self, 'saved_snapshot', "") != current_snapshot
         
         if is_modified:
-            reply = QMessageBox.question(
-                self, 
-                '確認', 
-                '未保存の変更があります。保存して終了しますか？\n（「破棄」を選ぶと保存せずに終了します）',
-                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
-                QMessageBox.Save
-            )
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle('確認')
+            msg_box.setText('未保存の変更があります。保存して終了しますか？\n（「破棄」を選ぶと保存せずに終了します）')
+            msg_box.setIcon(QMessageBox.Question)
 
-            if reply == QMessageBox.Save:
+            btn_save = msg_box.addButton("保存", QMessageBox.AcceptRole)
+            btn_discard = msg_box.addButton("破棄", QMessageBox.DestructiveRole)
+            btn_cancel = msg_box.addButton("キャンセル", QMessageBox.RejectRole)
+
+            msg_box.exec()
+
+            if msg_box.clickedButton() == btn_save:
                 if not self.last_path:
                     save_success = self.save_data_as()
                 else:
@@ -1243,7 +1245,7 @@ class GanttApp(QMainWindow, HistoryManagerMixin, FileManagerMixin, PrintManagerM
                 else:
                     event.ignore()
                     
-            elif reply == QMessageBox.Discard:
+            elif msg_box.clickedButton() == btn_discard:
                 self._cleanup_before_close()
                 event.accept()
             else:
