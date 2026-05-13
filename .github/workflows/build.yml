@@ -29,7 +29,7 @@ jobs:
         --onefile 
         --noconsole 
         --clean 
-        --name "MiyaGantt-v2.1.0" 
+        --name "MiyaGantt-v2.2.0" 
         --icon icon.ico 
         --add-data "README.md;." 
         --add-data "icon.ico;." 
@@ -40,5 +40,5 @@ jobs:
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: MiyaGantt-v2.1.0
-        path: dist/MiyaGantt-v2.1.0.exe
+        name: MiyaGantt-v2.2.0
+        path: dist/MiyaGantt-v2.2.0.exe
